@@ -1,10 +1,15 @@
 import 'dotenv/config';
 import fetch from 'node-fetch';
 import https from 'https';
+import fs from 'fs';
+import path from 'path';
+import { exec } from 'child_process';
+import { fileURLToPath } from 'url';
 
 // ---------- Режим аналитики ----------
 
-export const isAnalitycs = true;
+// export const isAnalitycs = true;
+export const isAnalitycs = false;
 
 // ---------- Настройки (как в main.js) ----------
 
@@ -15,6 +20,9 @@ const SAMPLE_POSTS_COUNT = 20;
 const SERVICE_BYTES_PER_POST = 50;
 const DOWNLOAD_BATCH_SIZE = 5;
 const API_VERSION = '5.130';
+
+const DOWNLOAD_RANDOM_IMAGE = true;
+const TEMP_DIR = path.join(path.dirname(fileURLToPath(import.meta.url)), 'Temp');
 
 // ---------- Результаты аналитики ----------
 
@@ -93,6 +101,96 @@ function formatBytes(bytes) {
     if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(2)} КБ`;
     if (bytes < 1024 * 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(2)} МБ`;
     return `${(bytes / (1024 * 1024 * 1024)).toFixed(2)} ГБ`;
+}
+
+function collectPhotoUrlsFromPosts(posts) {
+    const urls = [];
+
+    for (const post of posts) {
+        const photos = extractPhotosFromPost(post);
+
+        for (const photoAttachment of photos) {
+            const photoUrl = getMaxResolutionUrl(photoAttachment.photo);
+            if (photoUrl) {
+                urls.push(photoUrl);
+            }
+        }
+    }
+
+    return urls;
+}
+
+function ensureDir(dirPath) {
+    if (!fs.existsSync(dirPath)) {
+        fs.mkdirSync(dirPath, { recursive: true });
+    }
+}
+
+function openFile(filePath) {
+    const quotedPath = `"${filePath}"`;
+
+    if (process.platform === 'win32') {
+        exec(`start "" ${quotedPath}`);
+        return;
+    }
+
+    if (process.platform === 'darwin') {
+        exec(`open ${quotedPath}`);
+        return;
+    }
+
+    exec(`xdg-open ${quotedPath}`);
+}
+
+export async function downloadRandomGroupImage(options = {}) {
+    const {
+        groupId: groupIdOverride = groupId,
+        samplePostsCount = SAMPLE_POSTS_COUNT,
+        openAfterDownload = true,
+        tempDir = TEMP_DIR,
+    } = options;
+
+    const wallResponse = await vkApi('wall.get', {
+        owner_id: `-${groupIdOverride}`,
+        count: String(Math.min(samplePostsCount, 100)),
+        offset: '0',
+    });
+
+    const samplePosts = wallResponse.items ?? [];
+    const photoUrls = collectPhotoUrlsFromPosts(samplePosts);
+
+    if (photoUrls.length === 0) {
+        console.log('В выборке постов нет картинок для скачивания.');
+        return null;
+    }
+
+    const randomUrl = photoUrls[Math.floor(Math.random() * photoUrls.length)];
+    const buffer = await downloadImage(randomUrl);
+
+    ensureDir(tempDir);
+
+    const fileName = `random_${Date.now()}.jpg`;
+    const filePath = path.join(tempDir, fileName);
+
+    fs.writeFileSync(filePath, buffer);
+
+    console.log('');
+    console.log('————————————— Случайная картинка —————————————');
+    console.log(`Сохранено: ${filePath}`);
+    console.log(`Размер: ${formatBytes(buffer.length)}`);
+    console.log(`Всего картинок в выборке: ${photoUrls.length}`);
+
+    if (openAfterDownload) {
+        openFile(filePath);
+        console.log('Картинка открыта в программе просмотра по умолчанию.');
+    }
+
+    return {
+        filePath,
+        size: buffer.length,
+        url: randomUrl,
+        photosInSample: photoUrls.length,
+    };
 }
 
 // ---------- Основная аналитика ----------
@@ -211,10 +309,23 @@ export async function runGroupAnalytics(options = {}) {
     };
 }
 
-// ---------- Запуск при isAnalitycs = true ----------
+// ---------- Запуск ----------
 
-if (isAnalitycs) {
-    runGroupAnalytics().catch((err) => {
+if (isAnalitycs || DOWNLOAD_RANDOM_IMAGE) {
+    (async () => {
+        if (!accessToken) {
+            console.log('🔴 Error! Не указан ACCESS_TOKEN в файле .env');
+            process.exit(1);
+        }
+
+        if (isAnalitycs) {
+            await runGroupAnalytics();
+        }
+
+        if (DOWNLOAD_RANDOM_IMAGE) {
+            await downloadRandomGroupImage();
+        }
+    })().catch((err) => {
         console.log('');
         console.log('🔴 Error! Программа остановлена с ошибкой:');
         console.log(err.message);
