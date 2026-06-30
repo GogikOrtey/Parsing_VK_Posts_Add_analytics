@@ -1,0 +1,9 @@
+<div id="DownloadMP4HD" class="StartDownloadButton Button greenButton">
+					<div id="DownloadMP4HD_text" class="StartDownloadButton_text">
+												<span id="MP4HDText"> Скачать MP4 </span>  <span id="HDTag"> HD </span> 
+											</div>
+				</div>
+
+
+
+<input id="url" placeholder="Введите ссылку ВК, которую вы хотите скачать				" type="text" name="url" value="">
