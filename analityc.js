@@ -13,6 +13,7 @@ const groupId = '213046214';
 
 const SAMPLE_POSTS_COUNT = 20;
 const SERVICE_BYTES_PER_POST = 50;
+const DOWNLOAD_BATCH_SIZE = 5;
 const API_VERSION = '5.130';
 
 // ---------- Результаты аналитики ----------
@@ -80,6 +81,13 @@ function downloadImage(photoUrl) {
     });
 }
 
+async function runInBatches(items, batchSize, fn) {
+    for (let i = 0; i < items.length; i += batchSize) {
+        const batch = items.slice(i, i + batchSize);
+        await Promise.all(batch.map(fn));
+    }
+}
+
 function formatBytes(bytes) {
     if (bytes < 1024) return `${bytes} Б`;
     if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(2)} КБ`;
@@ -143,6 +151,8 @@ export async function runGroupAnalytics(options = {}) {
     let totalImageBytes = 0;
     let downloadedImages = 0;
 
+    const downloadTasks = [];
+
     for (let i = 0; i < samplePosts.length; i++) {
         const post = samplePosts[i];
         const photos = extractPhotosFromPost(post);
@@ -152,18 +162,21 @@ export async function runGroupAnalytics(options = {}) {
 
         for (const photoAttachment of photos) {
             const photoUrl = getMaxResolutionUrl(photoAttachment.photo);
-
-            if (!photoUrl) continue;
-
-            try {
-                const buffer = await downloadImage(photoUrl);
-                totalImageBytes += buffer.length;
-                downloadedImages++;
-            } catch (err) {
-                console.log(`  ⚠️ Не удалось загрузить картинку: ${err.message}`);
+            if (photoUrl) {
+                downloadTasks.push({ photoUrl, postIndex: i + 1 });
             }
         }
     }
+
+    await runInBatches(downloadTasks, DOWNLOAD_BATCH_SIZE, async ({ photoUrl, postIndex }) => {
+        try {
+            const buffer = await downloadImage(photoUrl);
+            totalImageBytes += buffer.length;
+            downloadedImages++;
+        } catch (err) {
+            console.log(`  ⚠️ Пост ${postIndex}: не удалось загрузить картинку: ${err.message}`);
+        }
+    });
 
     imageCountCoefficient = totalPhotosInSample / sampleSize;
     averageImageWeight = downloadedImages > 0 ? totalImageBytes / downloadedImages : 0;
@@ -180,7 +193,7 @@ export async function runGroupAnalytics(options = {}) {
     console.log(`Оценка числа картинок во всей группе: ${Math.round(estimatedTotalImages)}`);
     // console.log(`Вес картинок (оценка): ${formatBytes(Math.round(estimatedImagesWeight))}`);
     // console.log(`Вес всего контента в группе (оценка): ${formatBytes(Math.round(totalContentWeight))} (${Math.round(totalContentWeight)} байт)`);
-    console.log(`🟢 Вес всего контента в группе (оценка): ${formatBytes(Math.round(totalContentWeight))}`);
+    console.log(`🟢 Примерный вес всего контента в группе (оценка): ${formatBytes(Math.round(totalContentWeight))}`);
     console.log('');
 
     return {
