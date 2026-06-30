@@ -22,6 +22,7 @@ const DOWNLOAD_BATCH_SIZE = 5;
 const API_VERSION = '5.130';
 
 const DOWNLOAD_RANDOM_IMAGE = true;
+const RANDOM_IMAGE_MAX_ATTEMPTS = 15;
 const TEMP_DIR = path.join(path.dirname(fileURLToPath(import.meta.url)), 'Temp');
 
 // ---------- Результаты аналитики ----------
@@ -145,52 +146,78 @@ function openFile(filePath) {
 export async function downloadRandomGroupImage(options = {}) {
     const {
         groupId: groupIdOverride = groupId,
-        samplePostsCount = SAMPLE_POSTS_COUNT,
+        maxAttempts = RANDOM_IMAGE_MAX_ATTEMPTS,
         openAfterDownload = true,
         tempDir = TEMP_DIR,
     } = options;
 
-    const wallResponse = await vkApi('wall.get', {
+    const wallMeta = await vkApi('wall.get', {
         owner_id: `-${groupIdOverride}`,
-        count: String(Math.min(samplePostsCount, 100)),
+        count: '1',
         offset: '0',
     });
 
-    const samplePosts = wallResponse.items ?? [];
-    const photoUrls = collectPhotoUrlsFromPosts(samplePosts);
+    const totalPostsInGroup = wallMeta.count ?? 0;
 
-    if (photoUrls.length === 0) {
-        console.log('В выборке постов нет картинок для скачивания.');
+    if (totalPostsInGroup === 0) {
+        console.log('В группе нет постов.');
         return null;
     }
 
-    const randomUrl = photoUrls[Math.floor(Math.random() * photoUrls.length)];
-    const buffer = await downloadImage(randomUrl);
+    for (let attempt = 0; attempt < maxAttempts; attempt++) {
+        const randomOffset = Math.floor(Math.random() * totalPostsInGroup);
 
-    ensureDir(tempDir);
+        const wallResponse = await vkApi('wall.get', {
+            owner_id: `-${groupIdOverride}`,
+            count: '1',
+            offset: String(randomOffset),
+        });
 
-    const fileName = `random_${Date.now()}.jpg`;
-    const filePath = path.join(tempDir, fileName);
+        const post = wallResponse.items?.[0];
+        if (!post) {
+            continue;
+        }
 
-    fs.writeFileSync(filePath, buffer);
+        const photoUrls = collectPhotoUrlsFromPosts([post]);
+        if (photoUrls.length === 0) {
+            continue;
+        }
 
-    console.log('');
-    console.log('————————————— Случайная картинка —————————————');
-    console.log(`Сохранено: ${filePath}`);
-    console.log(`Размер: ${formatBytes(buffer.length)}`);
-    console.log(`Всего картинок в выборке: ${photoUrls.length}`);
+        const randomUrl = photoUrls[Math.floor(Math.random() * photoUrls.length)];
+        const buffer = await downloadImage(randomUrl);
 
-    if (openAfterDownload) {
-        openFile(filePath);
-        console.log('Картинка открыта в программе просмотра по умолчанию.');
+        ensureDir(tempDir);
+
+        const fileName = `random_${Date.now()}.jpg`;
+        const filePath = path.join(tempDir, fileName);
+
+        fs.writeFileSync(filePath, buffer);
+
+        console.log('');
+        console.log('————————————— Случайная картинка —————————————');
+        console.log(`Пост: ${randomOffset + 1} из ${totalPostsInGroup}`);
+        console.log(`Картинок в посте: ${photoUrls.length}`);
+        console.log(`Сохранено: ${filePath}`);
+        console.log(`Размер: ${formatBytes(buffer.length)}`);
+
+        if (openAfterDownload) {
+            openFile(filePath);
+            console.log('Картинка открыта в программе просмотра по умолчанию.');
+        }
+
+        return {
+            filePath,
+            size: buffer.length,
+            url: randomUrl,
+            totalPostsInGroup,
+            postOffset: randomOffset,
+            postNumber: randomOffset + 1,
+            photosInPost: photoUrls.length,
+        };
     }
 
-    return {
-        filePath,
-        size: buffer.length,
-        url: randomUrl,
-        photosInSample: photoUrls.length,
-    };
+    console.log(`Не удалось найти пост с картинкой за ${maxAttempts} попыток.`);
+    return null;
 }
 
 // ---------- Основная аналитика ----------
