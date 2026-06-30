@@ -128,7 +128,7 @@ if(accessToken == '') {
 
 
 
-let goonGroupName = ''; // Хорошее название группы, для создания папки с таим именем
+let goodGroupName = ''; // Хорошее название группы, для создания папки с таим именем
 
 // Получаю и вывожу название группы:
 await fetch(`https://api.vk.com/method/groups.getById?group_id=${groupId}&access_token=${accessToken}&v=5.130`)
@@ -136,8 +136,8 @@ await fetch(`https://api.vk.com/method/groups.getById?group_id=${groupId}&access
     .then(data => {
         console.log("data = ", data);                   //// Потом убрать
         let groupName = data.response[0].name;
-        goonGroupName = sanitizeFilename(groupName);
-        console.log("Название группы: " + goonGroupName);
+        goodGroupName = sanitizeFilename(groupName);
+        console.log("Название группы: " + goodGroupName);
         console.log("");
     })
 
@@ -182,7 +182,7 @@ function sanitizeFilename2(filename) {
 let currDateTime = moment().format('YYYY.MM.DD HH⁚mm⁚ss');
 
 // Пути задаются один раз, и потом используюся дальше в программе
-let nameFlMainSession = mainPath + 'Session [' + currDateTime + ']';    
+let nameFlMainSession = mainPath + 'Session [' + currDateTime + '] ' + goodGroupName;    
  
 // Проверяю, существуют ли такая папка
 if (fs.existsSync(nameFlMainSession)) {
@@ -198,7 +198,7 @@ if (fs.existsSync(nameFlMainSession)) {
 await fs.mkdirSync(nameFlMainSession, { recursive: true });
 console.log('Папка новой сессии была успешно создана');
 
-let floberGroupName = nameFlMainSession + '/' + goonGroupName; // Папка с названием группы
+let floberGroupName = nameFlMainSession + '/' + goodGroupName; // Папка с названием группы
 
 // Создаём в ней папку с именем назавния группы, из которой сохраняем контент
 await fs.mkdirSync(floberGroupName, { recursive: true });
@@ -211,9 +211,9 @@ await fs.mkdirSync(floberGroupName, { recursive: true });
 // (для того, что бы загрузить их позже)
 
 // Заголовок текстового файла:
-let data = 'Все ссылки на видео из постов\n\nГруппа: ' + goonGroupName + '\n\n'; 
+let data = 'Все ссылки на видео из постов\n\nГруппа: ' + goodGroupName + '\n\n'; 
 // Путь к этому текстовому файлу:
-let txtFile_allVideoLinks = nameFlMainSession + '/Ссылки на видео из группы ' + goonGroupName + '.txt';
+let txtFile_allVideoLinks = nameFlMainSession + '/Ссылки на видео из группы ' + goodGroupName + '.txt';
 
 await fs.writeFileSync(txtFile_allVideoLinks, data);
 
@@ -234,9 +234,9 @@ await fs.writeFileSync(txtFile_allVideoLinks, data);
 // (для того, что бы загрузить их позже)
 
 // Заголовок текстового файла:
-let data2 = 'Все ссылки на gif из постов\n\nГруппа: ' + goonGroupName + '\n\n'; 
+let data2 = 'Все ссылки на gif из постов\n\nГруппа: ' + goodGroupName + '\n\n'; 
 // Путь к этому текстовому файлу:
-let txtFile_allGifLinks = nameFlMainSession + '/Ссылки на gif из группы ' + goonGroupName + '.txt';
+let txtFile_allGifLinks = nameFlMainSession + '/Ссылки на gif из группы ' + goodGroupName + '.txt';
 
 await fs.writeFileSync(txtFile_allGifLinks, data2);
 
@@ -687,7 +687,7 @@ v=5.130`)
                     console.log("")
                     let dOut3 = "🟣🟣🟣 Программа сохранения дошла до " + (offset + count) + " поста, в котором есть опрос"
                     console.log(dOut3);
-                    // let txtFile_stopThisProgramm = nameFlMainSession + '/На каком посте остановились из группы ' + goonGroupName + '.txt';
+                    // let txtFile_stopThisProgramm = nameFlMainSession + '/На каком посте остановились из группы ' + goodGroupName + '.txt';
                     // fs.writeFileSync(txtFile_stopThisProgramm, dOut3);
                     //process.exit();
 
@@ -813,14 +813,14 @@ async function EndOfProgramm() {
         // Сохраняю в текстовом файле сессии, на каком посте мы остановились:
 
         // Путь к этому текстовому файлу:
-        let txtFile_stopThisProgramm = nameFlMainSession + '/На каком посте остановились из группы ' + goonGroupName + '.txt';
+        let txtFile_stopThisProgramm = nameFlMainSession + '/На каком посте остановились из группы ' + goodGroupName + '.txt';
 
         await fs.writeFileSync(txtFile_stopThisProgramm, dOut2);
     } else {
         // Сохраняю файл, что мы дошли до конца сообщества:
 
         // Путь к этому текстовому файлу:
-        let txtFile_stopThisProgramm_2 = nameFlMainSession + '/🔥 Мы дошли до конца группы ' + goonGroupName + '.txt';
+        let txtFile_stopThisProgramm_2 = nameFlMainSession + '/🔥 Мы дошли до конца группы ' + goodGroupName + '.txt';
 
         console.log("Общее количество постов, изначально было: " + allCountPostOfThisGroup);
 
