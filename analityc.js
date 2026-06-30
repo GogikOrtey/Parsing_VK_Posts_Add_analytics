@@ -211,8 +211,8 @@ export async function downloadRandomGroupImage(options = {}) {
         ensureDir(tempDir);
 
         const fileName = photoUrls.length > 1
-            ? `${postNumber}_${randomPhotoIndex + 1}.jpg`
-            : `${postNumber}.jpg`;
+            ? `random_${postNumber}_${randomPhotoIndex + 1}.jpg`
+            : `random_${postNumber}.jpg`;
         const filePath = path.join(tempDir, fileName);
 
         fs.writeFileSync(filePath, buffer);
