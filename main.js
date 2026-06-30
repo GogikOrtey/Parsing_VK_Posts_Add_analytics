@@ -35,7 +35,9 @@ const accessToken = process.env.ACCESS_TOKEN ?? '';
 // + // const groupId = '186150422';        // Love is beautiful
 
 
-const groupId = '234264825';
+// const groupId = '234264825';
+// const groupId = 'madein_abyss';
+const groupId = '213046214';
 
 
 // https://vk.com/public + этот номер, без пробела
@@ -49,8 +51,8 @@ const groupId = '234264825';
 
 let startOffset = 0     // = 0, если мы хотим начать с верха сообщества    
 let startCount = 20     // Лучшее значение - это 10 или 20. Макисмальное = 100
-let allCount = -1      // Ограничитель, сколько мы обработаем постов // = -1, если без ограничения
-// let allCount = 10      // Ограничитель, сколько мы обработаем постов // = -1, если без ограничения
+// let allCount = -1      // Ограничитель, сколько мы обработаем постов // = -1, если без ограничения
+let allCount = 10      // Ограничитель, сколько мы обработаем постов // = -1, если без ограничения
 
 // count - это количество постов, которые вернёт нам сервер max=100
 // offset - это сдвиг, относительно которого нам сервер отправит посты
@@ -322,6 +324,17 @@ v=5.130`)
 
             // Информация о количестве запрашиваемых постов:
             let int_insCountOfThePost = 0;
+
+            // Проверяем, что API вернул корректный ответ
+            if (json.error || !json.response || !Array.isArray(json.response.items)) {
+                console.log('');
+                console.log('🔴 Error! Программа остановлена с ошибкой');
+                console.log('API вернул неверный ответ, проверьте параметры запроса');
+                if (json.error) {
+                    console.log(`Код ошибки VK API: ${json.error.error_code}, сообщение: ${json.error.error_msg}`);
+                }
+                process.exit();
+            }
 
             // Обрабатываем каждый пост
             json.response.items.forEach(async item => {
