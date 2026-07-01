@@ -9,7 +9,7 @@ import axios from 'axios';
 
 
 // ---------- Описание программы ----------
- 
+
 // Эта программа скачает и сохранит: Картинки, Подписи к посту и GIF
 // Также, она получит ссылки на все видео из постов, и сохранит их в текстовый файл, с датами постов
 
@@ -37,22 +37,23 @@ const accessToken = process.env.ACCESS_TOKEN ?? '';
 
 // const groupId = '234264825';
 // const groupId = 'madein_abyss';
-const groupId = '213046214';
+// const groupId = '213046214';
+const groupId = '236598787';
 
 
 // https://vk.com/public + этот номер, без пробела
 
 
 
-    /*////////////////////////////////////
-    //          Count и Offset          //
-    ////////////////////////////////////*/
-    
+/*////////////////////////////////////
+//          Count и Offset          //
+////////////////////////////////////*/
+
 
 let startOffset = 0     // = 0, если мы хотим начать с верха сообщества    
 let startCount = 20     // Лучшее значение - это 10 или 20. Макисмальное = 100
-// let allCount = -1      // Ограничитель, сколько мы обработаем постов // = -1, если без ограничения
-let allCount = 10      // Ограничитель, сколько мы обработаем постов // = -1, если без ограничения
+let allCount = -1      // Ограничитель, сколько мы обработаем постов // = -1, если без ограничения
+// let allCount = 10      // Ограничитель, сколько мы обработаем постов // = -1, если без ограничения
 
 // count - это количество постов, которые вернёт нам сервер max=100
 // offset - это сдвиг, относительно которого нам сервер отправит посты
@@ -117,7 +118,7 @@ console.log("Вас приветствует программа загрузки
 console.log("")
 
 
-if(accessToken == '') {
+if (accessToken == '') {
     console.log("В программе не указан Ключ доступа к API. Его нужно указать в файле .env (переменная ACCESS_TOKEN)")
     console.log("Как получить Ключ доступа к API ВКонтакте - вы можете легко узнать в интернете. Это не займёт больше 2х минут")
     console.log('');
@@ -171,9 +172,42 @@ function sanitizeFilename2(filename) {
     return filename.replace(invalidChars, '');
 }
 
+// Синхронная функция для загрузки изображения
+// Благодаря ей мы ждём, пока изображение не загрузится, и только потом переходим к его сохранению
+// Скачивает изображение по HTTPS-ссылке и возвращает Buffer.
+// Используется в downloadImageWithRetries при сохранении фото из постов.
+function downloadImage(photoUrl) {
+    return new Promise((resolve, reject) => {
+        https.get(photoUrl, (response) => {
+            const data = [];
 
+            response.on('data', (chunk) => data.push(chunk));
+            response.on('end', () => resolve(Buffer.concat(data)));
+            response.on('error', reject);
+        }).on('error', reject);
+    });
+}
 
+// Для обработки возможных ошибок при запросах загрузки, используется эта функция
+// Скачивает изображение с повторами при сетевых ошибках (до maxAttempts попыток).
+// Используется в MainRequest при сохранении фото из постов.
+async function downloadImageWithRetries(photoUrl, maxAttempts = 3) {
+    let lastError;
 
+    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+        try {
+            return await downloadImage(photoUrl);
+        } catch (err) {
+            lastError = err;
+            if (attempt < maxAttempts) {
+                console.log(`⚠️ Не удалось загрузить изображение (попытка ${attempt}/${maxAttempts}): ${err.message}`);
+                await new Promise(resolve => setTimeout(resolve, 1000));
+            }
+        }
+    }
+
+    throw lastError;
+}
 
 // Создаю папку Session [Дата и время] - для устранения любых конфликтов
 // В ней создаю папку с названием группы
@@ -182,8 +216,8 @@ function sanitizeFilename2(filename) {
 let currDateTime = moment().format('YYYY.MM.DD HH⁚mm⁚ss');
 
 // Пути задаются один раз, и потом используюся дальше в программе
-let nameFlMainSession = mainPath + 'Session [' + currDateTime + '] ' + goodGroupName;    
- 
+let nameFlMainSession = mainPath + 'Session [' + currDateTime + '] ' + goodGroupName;
+
 // Проверяю, существуют ли такая папка
 if (fs.existsSync(nameFlMainSession)) {
     // Если да - то останавливаю программу
@@ -211,7 +245,7 @@ await fs.mkdirSync(floberGroupName, { recursive: true });
 // (для того, что бы загрузить их позже)
 
 // Заголовок текстового файла:
-let data = 'Все ссылки на видео из постов\n\nГруппа: ' + goodGroupName + '\n\n'; 
+let data = 'Все ссылки на видео из постов\n\nГруппа: ' + goodGroupName + '\n\n';
 // Путь к этому текстовому файлу:
 let txtFile_allVideoLinks = nameFlMainSession + '/Ссылки на видео из группы ' + goodGroupName + '.txt';
 
@@ -234,7 +268,7 @@ await fs.writeFileSync(txtFile_allVideoLinks, data);
 // (для того, что бы загрузить их позже)
 
 // Заголовок текстового файла:
-let data2 = 'Все ссылки на gif из постов\n\nГруппа: ' + goodGroupName + '\n\n'; 
+let data2 = 'Все ссылки на gif из постов\n\nГруппа: ' + goodGroupName + '\n\n';
 // Путь к этому текстовому файлу:
 let txtFile_allGifLinks = nameFlMainSession + '/Ссылки на gif из группы ' + goodGroupName + '.txt';
 
@@ -267,10 +301,10 @@ const oldStartOffset = startOffset;     // Значение оффсета, ко
 
 
 console.log(`Мы начинаем с ${startOffset} поста сверху страницы, и запрашиваем ${startCount} постов`)
-if(allCount != -1) console.log(`Мы хотим загрузить всего ${allCount} постов`)
+if (allCount != -1) console.log(`Мы хотим загрузить всего ${allCount} постов`)
 else {
-    
-    if(bool_isStopedBeforePool == true) {
+
+    if (bool_isStopedBeforePool == true) {
         console.log("📊 Мы хотим загрузить все посты из сообщества, до первого опроса")
     } else {
         console.log("🎲 Мы хотим загрузить все посты из сообщества, до самого конца сообщества")
@@ -284,11 +318,11 @@ else {
 
 
 
-                /*/////////////////////////////////////////////////////////////////
-                //                                                               //
-                //                        Главный запрос                         //
-                //                                                               //
-                /////////////////////////////////////////////////////////////////*/
+/*/////////////////////////////////////////////////////////////////
+//                                                               //
+//                        Главный запрос                         //
+//                                                               //
+/////////////////////////////////////////////////////////////////*/
 
 async function MainRequest(count, offset) {
 
@@ -313,7 +347,7 @@ async function MainRequest(count, offset) {
 
 
 
-await fetch(`https://api.vk.com/method/wall.get?
+    await fetch(`https://api.vk.com/method/wall.get?
 owner_id=-${groupId}&
 count=${count}&
 offset=${offset}&
@@ -391,7 +425,7 @@ v=5.130`)
                     bool_ismultiplyPhotosInThePost = true;
                 }
 
-                
+
 
 
                 /*////////////////////////////////////
@@ -489,25 +523,6 @@ v=5.130`)
                 /////////////////////////////////////////////////////// */
 
 
-                // Синхронная функция для загрузки изображения
-                // Благодаря ей мы ждём, пока изображение не загрузится, и только потом переходим к его сохранению
-                async function downloadImage(photoUrl) {
-                    return new Promise((resolve, reject) => {
-                        https.get(photoUrl, response => {
-                            let data = [];
-
-                            response.on('data', chunk => {
-                                data.push(chunk);
-                            }).on('end', () => {
-                                let buffer = Buffer.concat(data); // Собираем кусочки изображения в одно
-                                resolve(buffer);
-                            }).on('error', err => {
-                                reject(err);
-                            });
-                        });
-                    });
-                }
-
                 let addCount = 1;
 
                 // Для всех изображений, в полученном наборе:
@@ -530,11 +545,13 @@ v=5.130`)
 
                     const photoUrl = maxResolutionUrl;
 
+                    const globalCountPost = offset + int_insCountOfThePost;
+
                     try {
                         // Запрашиваю картинки, по ссылкам, полученным из поста
                         // Эти запросы выполняются асинхронно
                         counterWaitRequest++;
-                        let buffer = await downloadImage(photoUrl);
+                        let buffer = await downloadImageWithRetries(photoUrl);
 
                         //let hash = createHash(buffer);                    // Вычисляем хеш изображения
                         //console.log("hash = " + hash)
@@ -558,24 +575,24 @@ v=5.130`)
                                 tempFileName += " (" + addCount + ")";
                             }
                             tempFileName += ".jpg";
-                
+
                             let path = floberGroupName + `/${tempFileName}`; // Путь, куда картинка будет сохранена
-                
+
                             // Кидаю предупреждение, если такой файл уже есть в этой папке
                             if (!fs.existsSync(path)) {
                                 fileName = tempFileName;
                                 break;
                             }
-                
+
                             if (bool_isinfoShow) console.log("⚠️ Файл с именем " + tempFileName + " уже существует в папке " + floberGroupName);
                             addCount++;
                         } while (true);
-                
+
                         let path = floberGroupName + `/${fileName}`;
-                
+
                         // Сохраняю это изображение в папке 
                         fs.writeFileSync(path, buffer);
-                
+
                         console.log("✅ Файл с именем " + fileName + " сохранён в папке " + floberGroupName);
 
                         // Получаю timestamp из postDateTime
@@ -590,7 +607,10 @@ v=5.130`)
 
                         counterWaitRequest--;
                     } catch (err) {
-                        console.error(err);
+                        console.log(`⚠️ Не удалось загрузить изображение после 3 попыток: ${err.message}`);
+                        console.log(`   Пост №${globalCountPost}, дата: ${postDateTime}`);
+                        console.log(`   URL: ${photoUrl}`);
+                        counterWaitRequest--;
                     }
                 }
 
@@ -605,7 +625,7 @@ v=5.130`)
                 // Для всех gif, в полученном наборе:
                 for (let attachment of attachments) {
                     if (attachment.doc) {
-                        if(bool_isDataPrint == false) {
+                        if (bool_isDataPrint == false) {
                             bool_isDataPrint = true;
                             if (goodPostText != '') {
                                 // Если в посте есть текст, добавляем его в название к видео, после даты:
@@ -744,7 +764,7 @@ async function waitForCondition() {
         }
     }
 
-    if(bool_isFirstStart == true) {
+    if (bool_isFirstStart == true) {
         await new Promise(resolve => setTimeout(resolve, 4000)); // Ждем 1 секунду
         bool_isFirstStart = false;
         MainRequest(startCount, startOffset);
@@ -753,33 +773,33 @@ async function waitForCondition() {
         console.log("Мы загрузили все посты с " + startOffset + " по " + (startOffset + startCount));
 
         // Мы дошли до опроса? или если мы не останавливаемся, когда дошли до опроса:
-        if(bool_isWeGoingToPoll == false || bool_isStopedBeforePool == false) {
-            
+        if (bool_isWeGoingToPoll == false || bool_isStopedBeforePool == false) {
+
             // Обработка случая, когда посты в сообществе закончились
             if ((timeDifference < 0.5) && (timeDifference > 0)) {
                 console.log("")
                 console.log("С последнего запроса прошло " + timeDifference.toFixed(2) + " секунд")
                 console.log("🎈 Слишком частые ответы, скорее всего посты в сообществе закончились")
-                bool_isFinalPublicWall = true; 
+                bool_isFinalPublicWall = true;
                 await EndOfProgramm();
                 process.exit();
             }
 
             console.log("Продолжаем загружать посты")
-    
+
             startOffset += startCount; // Каждый раз делаем шаг на то количество постов, которое изначально запросили
 
             // Проверка на количество постов, которое мы изначально хотели загрузить
-            if(allCount != -1) {
+            if (allCount != -1) {
                 // console.log("—————————————————————— startOffset - oldStartOffset = " + (startOffset - oldStartOffset))
-                if((startOffset - oldStartOffset) >= allCount) {
+                if ((startOffset - oldStartOffset) >= allCount) {
                     console.log("Мы загрузили достаточно постов (" + (startOffset - oldStartOffset) + "), на этом программа завершается")
                     startOffset -= startCount;
                     await EndOfProgramm();
                     process.exit();
-                } 
+                }
             }
-    
+
             MainRequest(startCount, startOffset); // И запускаем запрос заново
         } else {
             EndOfProgramm();
@@ -788,9 +808,9 @@ async function waitForCondition() {
 }
 
 
-    /*////////////////////////////////////
-    //       Завершение программы       //
-    ////////////////////////////////////*/
+/*////////////////////////////////////
+//       Завершение программы       //
+////////////////////////////////////*/
 
 
 async function EndOfProgramm() {
@@ -799,13 +819,13 @@ async function EndOfProgramm() {
 
     let dOut2;
 
-    if(bool_isFinalPublicWall == true && int_lastNumberOfPost != -1) {
+    if (bool_isFinalPublicWall == true && int_lastNumberOfPost != -1) {
         // № последнего поста считается немного некорректно, если мы дошли до конца постов в сообществе
         dOut2 = `Мы остановились на ` + (int_lastNumberOfPost + oldStartOffset + 1) + " посте. Это последний пост в сообществе 🔥🔥🔥";
     } else {
         dOut2 = `Мы остановились на ` + (startOffset + startCount) + " посте";
     }
-     
+
     console.log(dOut2)
     console.log(``)
 

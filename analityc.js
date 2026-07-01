@@ -8,20 +8,25 @@ import { fileURLToPath } from 'url';
 
 // ---------- Режим аналитики ----------
 
-// export const isAnalitycs = true;
-export const isAnalitycs = false;
+export const isAnalitycs = true;
+// export const isAnalitycs = false;
+
+// Скачивание случайного поста
+// const DOWNLOAD_RANDOM_IMAGE = true;
+const DOWNLOAD_RANDOM_IMAGE = false;
 
 // ---------- Настройки (как в main.js) ----------
 
 const accessToken = process.env.ACCESS_TOKEN ?? '';
-const groupId = '213046214';
+// const groupId = '213046214';
+const groupId = '236598787';
 
 const SAMPLE_POSTS_COUNT = 20;
 const SERVICE_BYTES_PER_POST = 50;
 const DOWNLOAD_BATCH_SIZE = 5;
 const API_VERSION = '5.130';
 
-const DOWNLOAD_RANDOM_IMAGE = true;
+
 const RANDOM_IMAGE_MAX_ATTEMPTS = 15;
 const TEMP_DIR = path.join(path.dirname(fileURLToPath(import.meta.url)), 'temp');
 
