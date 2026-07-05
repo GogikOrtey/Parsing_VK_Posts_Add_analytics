@@ -8,18 +8,20 @@ import { fileURLToPath } from 'url';
 
 // ---------- Режим аналитики ----------
 
-export const isAnalitycs = true;
-// export const isAnalitycs = false;
+// export const isAnalitycs = true;
+export const isAnalitycs = false;
 
 // Скачивание случайного поста
-// const DOWNLOAD_RANDOM_IMAGE = true;
-const DOWNLOAD_RANDOM_IMAGE = false;
+const DOWNLOAD_RANDOM_IMAGE = true;
+// const DOWNLOAD_RANDOM_IMAGE = false;
 
 // ---------- Настройки (как в main.js) ----------
 
 const accessToken = process.env.ACCESS_TOKEN ?? '';
+// ID, короткое имя или ссылка на группу ВКонтакте
+// Примеры: '236598787', 'creativityal', 'https://vk.com/creativityal'
 // const groupId = '213046214';
-const groupId = '236598787';
+let groupId = 'creativityal';
 
 const SAMPLE_POSTS_COUNT = 20;
 const SERVICE_BYTES_PER_POST = 50;
@@ -56,6 +58,36 @@ async function vkApi(method, params = {}) {
     }
 
     return json.response;
+}
+
+// Извлекает идентификатор группы из числового id, короткого имени или ссылки vk.com/...
+// Используется в resolveGroupId перед запросом groups.getById.
+function parseGroupIdInput(raw) {
+    let value = String(raw).trim();
+
+    const urlMatch = value.match(/(?:https?:\/\/)?(?:m\.)?vk\.com\/([^/?#]+)/i);
+    if (urlMatch) {
+        value = urlMatch[1];
+    }
+
+    const publicClubMatch = value.match(/^(?:public|club|event)(\d+)$/i);
+    if (publicClubMatch) {
+        value = publicClubMatch[1];
+    }
+
+    return value;
+}
+
+// Преобразует groupId (id, короткое имя или ссылку) в числовой id и название группы.
+// Используется в runGroupAnalytics и downloadRandomGroupImage перед wall.get.
+async function resolveGroupId(rawGroupId) {
+    const parsedGroupId = parseGroupIdInput(rawGroupId);
+    const groupInfo = await vkApi('groups.getById', { group_id: parsedGroupId });
+
+    return {
+        id: String(groupInfo[0].id),
+        name: groupInfo[0].name,
+    };
 }
 
 // ---------- Работа с постами и картинками ----------
@@ -176,8 +208,10 @@ export async function downloadRandomGroupImage(options = {}) {
         tempDir = TEMP_DIR,
     } = options;
 
+    const { id: resolvedGroupId } = await resolveGroupId(groupIdOverride);
+
     const wallMeta = await vkApi('wall.get', {
-        owner_id: `-${groupIdOverride}`,
+        owner_id: `-${resolvedGroupId}`,
         count: '1',
         offset: '0',
     });
@@ -193,7 +227,7 @@ export async function downloadRandomGroupImage(options = {}) {
         const randomOffset = Math.floor(Math.random() * totalPostsInGroup);
 
         const wallResponse = await vkApi('wall.get', {
-            owner_id: `-${groupIdOverride}`,
+            owner_id: `-${resolvedGroupId}`,
             count: '1',
             offset: String(randomOffset),
         });
@@ -259,8 +293,6 @@ export async function runGroupAnalytics(options = {}) {
         samplePostsCount = SAMPLE_POSTS_COUNT,
     } = options;
 
-    const resolvedGroupId = groupIdOverride;
-
     console.log('');
     console.log('———————————————————————————————————————————————————————————');
     console.log('Режим аналитики группы ВКонтакте');
@@ -271,8 +303,7 @@ export async function runGroupAnalytics(options = {}) {
         process.exit(1);
     }
 
-    const groupInfo = await vkApi('groups.getById', { group_id: resolvedGroupId });
-    const groupName = groupInfo[0].name;
+    const { id: resolvedGroupId, name: groupName } = await resolveGroupId(groupIdOverride);
 
     console.log(`Группа: ${groupName} (id: ${resolvedGroupId})`);
     console.log('');
