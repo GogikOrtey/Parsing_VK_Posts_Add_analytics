@@ -21,7 +21,8 @@ import axios from 'axios';
 // Ключ доступа к API (задаётся в файле .env)
 const accessToken = process.env.ACCESS_TOKEN ?? '';
 
-// ID группы ВКонтакте
+// ID, короткое имя или ссылка на группу ВКонтакте
+// Примеры: '224924750', 'creativityal', 'https://vk.com/creativityal'
 // + // const groupId = '224924750';        // Мемы для программистов
 // + // const groupId = '185062110';        // Best Photo Live!
 // + // const groupId = '169371425';        // Жизненные ценности
@@ -38,7 +39,8 @@ const accessToken = process.env.ACCESS_TOKEN ?? '';
 // const groupId = '234264825';
 // const groupId = 'madein_abyss';
 // const groupId = '213046214';
-const groupId = '236598787';
+// const groupId = '236598787';
+let groupId = 'creativityal';
 
 
 // https://vk.com/public + этот номер, без пробела
@@ -52,8 +54,8 @@ const groupId = '236598787';
 
 let startOffset = 0     // = 0, если мы хотим начать с верха сообщества    
 let startCount = 20     // Лучшее значение - это 10 или 20. Макисмальное = 100
-let allCount = -1      // Ограничитель, сколько мы обработаем постов // = -1, если без ограничения
-// let allCount = 10      // Ограничитель, сколько мы обработаем постов // = -1, если без ограничения
+// let allCount = -1      // Ограничитель, сколько мы обработаем постов // = -1, если без ограничения
+let allCount = 10      // Ограничитель, сколько мы обработаем постов // = -1, если без ограничения
 
 // count - это количество постов, которые вернёт нам сервер max=100
 // offset - это сдвиг, относительно которого нам сервер отправит посты
@@ -131,16 +133,47 @@ if (accessToken == '') {
 
 let goodGroupName = ''; // Хорошее название группы, для создания папки с таим именем
 
-// Получаю и вывожу название группы:
-await fetch(`https://api.vk.com/method/groups.getById?group_id=${groupId}&access_token=${accessToken}&v=5.130`)
-    .then(response => response.json())
-    .then(data => {
-        console.log("data = ", data);                   //// Потом убрать
-        let groupName = data.response[0].name;
-        goodGroupName = sanitizeFilename(groupName);
-        console.log("Название группы: " + goodGroupName);
-        console.log("");
-    })
+// Извлекает идентификатор группы из числового id, короткого имени или ссылки vk.com/...
+// Используется перед groups.getById для нормализации значения groupId из настроек.
+function parseGroupIdInput(raw) {
+    let value = String(raw).trim();
+
+    const urlMatch = value.match(/(?:https?:\/\/)?(?:m\.)?vk\.com\/([^/?#]+)/i);
+    if (urlMatch) {
+        value = urlMatch[1];
+    }
+
+    const publicClubMatch = value.match(/^(?:public|club|event)(\d+)$/i);
+    if (publicClubMatch) {
+        value = publicClubMatch[1];
+    }
+
+    return value;
+}
+
+groupId = parseGroupIdInput(groupId);
+
+// Получаю название группы и числовой id для последующих запросов (wall.get и др.)
+const groupInfoResponse = await fetch(
+    `https://api.vk.com/method/groups.getById?group_id=${groupId}&access_token=${accessToken}&v=5.130`
+).then(response => response.json());
+
+if (groupInfoResponse.error || !groupInfoResponse.response?.[0]) {
+    console.log('');
+    console.log('🔴 Error! Программа остановлена с ошибкой');
+    console.log('Не удалось получить информацию о группе, проверьте groupId');
+    if (groupInfoResponse.error) {
+        console.log(`Код ошибки VK API: ${groupInfoResponse.error.error_code}, сообщение: ${groupInfoResponse.error.error_msg}`);
+    }
+    process.exit();
+}
+
+const groupInfo = groupInfoResponse.response[0];
+groupId = String(groupInfo.id);
+goodGroupName = sanitizeFilename(groupInfo.name);
+console.log("Название группы: " + goodGroupName);
+console.log("ID группы: " + groupId);
+console.log("");
 
 
 
