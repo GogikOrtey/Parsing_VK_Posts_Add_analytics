@@ -6,6 +6,8 @@ import moment from 'moment';
 import crypto from 'crypto';
 import sharp from 'sharp';
 import axios from 'axios';
+import { spawn } from 'child_process';
+import path from 'path';
 
 
 // ---------- Описание программы ----------
@@ -112,11 +114,11 @@ let bool_isinfoShow = false;            // Если = true, то в консол
 
 
 console.log(" ")
-console.log("———————————————————————————————————————————————————————————")
-console.log("———————————————————————————————————————————————————————————")
-console.log("v1.0")
+console.log("—————————————————————————————————————————————")
+console.log("—————————————————————————————————————————————")
+console.log("v1.1")
 console.log("")
-console.log("Вас приветствует программа загрузки контента из ВК!")
+console.log("🔵 Вас приветствует программа загрузки контента из ВК!")
 console.log("")
 
 
@@ -835,7 +837,7 @@ async function waitForCondition() {
 
             MainRequest(startCount, startOffset); // И запускаем запрос заново
         } else {
-            EndOfProgramm();
+            await EndOfProgramm();
         }
     }
 }
@@ -845,6 +847,39 @@ async function waitForCondition() {
 //       Завершение программы       //
 ////////////////////////////////////*/
 
+// Открывает папку сессии в проводнике ОС; вызывается в EndOfProgramm при успешном завершении
+async function openSaveFolder(folderPath) {
+    const absolutePath = path.resolve(folderPath);
+
+    return new Promise((resolve) => {
+        let child;
+
+        if (process.platform === 'win32') {
+            child = spawn('cmd.exe', ['/c', 'start', '', absolutePath], {
+                detached: true,
+                stdio: 'ignore',
+                windowsHide: true
+            });
+        } else if (process.platform === 'darwin') {
+            child = spawn('open', [absolutePath], {
+                detached: true,
+                stdio: 'ignore'
+            });
+        } else {
+            child = spawn('xdg-open', [absolutePath], {
+                detached: true,
+                stdio: 'ignore'
+            });
+        }
+
+        child.on('error', (err) => {
+            console.log('⚠️ Не удалось открыть папку сохранения:', err.message);
+        });
+
+        child.unref();
+        resolve();
+    });
+}
 
 async function EndOfProgramm() {
     console.log(``)
@@ -879,6 +914,8 @@ async function EndOfProgramm() {
 
         await fs.writeFileSync(txtFile_stopThisProgramm_2, dOut2);
     }
+
+    await openSaveFolder(nameFlMainSession);
 }
 
 
