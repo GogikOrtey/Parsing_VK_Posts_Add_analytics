@@ -71,12 +71,12 @@ async function vkApi(method, params = {}) {
     return json.response;
 }
 
-// Извлекает идентификатор группы из числового id, короткого имени или ссылки vk.com/...
+// Извлекает идентификатор группы из числового id, короткого имени или ссылки vk.com/vk.ru/...
 // Используется в resolveGroupId перед запросом groups.getById.
 function parseGroupIdInput(raw) {
     let value = String(raw).trim();
 
-    const urlMatch = value.match(/(?:https?:\/\/)?(?:m\.)?vk\.com\/([^/?#]+)/i);
+    const urlMatch = value.match(/(?:https?:\/\/)?(?:m\.)?vk\.(?:com|ru)\/([^/?#]+)/i);
     if (urlMatch) {
         value = urlMatch[1];
     }

@@ -24,7 +24,7 @@ import path from 'path';
 const accessToken = process.env.ACCESS_TOKEN ?? '';
 
 // ID, короткое имя или ссылка на группу ВКонтакте
-// Примеры: '224924750', 'creativityal', 'https://vk.com/creativityal'
+// Примеры: '224924750', 'creativityal', 'https://vk.com/creativityal', 'https://vk.ru/snowarts'
 // + // const groupId = '224924750';        // Мемы для программистов
 // + // const groupId = '185062110';        // Best Photo Live!
 // + // const groupId = '169371425';        // Жизненные ценности
@@ -46,7 +46,7 @@ const accessToken = process.env.ACCESS_TOKEN ?? '';
 // let groupId = 'b1ackrockshooter';
 // let groupId = 'iichan228';
 // let groupId = 'snowarts';
-let groupId = 'snowarts'; // https://vk.ru/snowarts
+let groupId = 'https://vk.ru/snowarts'; 
 
 
 // https://vk.com/public + этот номер, без пробела
@@ -60,8 +60,8 @@ let groupId = 'snowarts'; // https://vk.ru/snowarts
 
 let startOffset = 0     // = 0, если мы хотим начать с верха сообщества    
 let startCount = 20     // Лучшее значение - это 10 или 20. Макисмальное = 100
-let allCount = -1      // Ограничитель, сколько мы обработаем постов // = -1, если без ограничения
-// let allCount = 10      // Ограничитель, сколько мы обработаем постов // = -1, если без ограничения
+// let allCount = -1      // Ограничитель, сколько мы обработаем постов // = -1, если без ограничения
+let allCount = 1      // Ограничитель, сколько мы обработаем постов // = -1, если без ограничения
 // let allCount = 100      // Ограничитель, сколько мы обработаем постов // = -1, если без ограничения
 
 // Нижняя граница по дате/времени публикации: сохраняем посты от верха стены вниз до этой точки (включительно)
@@ -145,12 +145,12 @@ if (accessToken == '') {
 
 let goodGroupName = ''; // Хорошее название группы, для создания папки с таим именем
 
-// Извлекает идентификатор группы из числового id, короткого имени или ссылки vk.com/...
+// Извлекает идентификатор группы из числового id, короткого имени или ссылки vk.com/vk.ru/...
 // Используется перед groups.getById для нормализации значения groupId из настроек.
 function parseGroupIdInput(raw) {
     let value = String(raw).trim();
 
-    const urlMatch = value.match(/(?:https?:\/\/)?(?:m\.)?vk\.com\/([^/?#]+)/i);
+    const urlMatch = value.match(/(?:https?:\/\/)?(?:m\.)?vk\.(?:com|ru)\/([^/?#]+)/i);
     if (urlMatch) {
         value = urlMatch[1];
     }
