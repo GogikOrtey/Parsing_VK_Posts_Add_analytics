@@ -44,7 +44,8 @@ const accessToken = process.env.ACCESS_TOKEN ?? '';
 // const groupId = '236598787';
 // let groupId = 'creativityal';
 // let groupId = 'b1ackrockshooter';
-let groupId = 'iichan228';
+// let groupId = 'iichan228';
+let groupId = 'snowarts';
 
 
 // https://vk.com/public + этот номер, без пробела
@@ -61,6 +62,92 @@ let startCount = 20     // Лучшее значение - это 10 или 20. 
 // let allCount = -1      // Ограничитель, сколько мы обработаем постов // = -1, если без ограничения
 // let allCount = 10      // Ограничитель, сколько мы обработаем постов // = -1, если без ограничения
 let allCount = 100      // Ограничитель, сколько мы обработаем постов // = -1, если без ограничения
+
+// Нижняя граница по дате/времени публикации: сохраняем посты от верха стены
+// вниз до этой точки (включительно). Пустая дата = без ограничения по дате.
+// Дата: "2026.07.02"
+// Время (необязательно): "02:43:50" | "02⁚43⁚50" | "02:43" | "2h 43m"
+// Если время не указано — считаем 00:00:00 указанной даты.
+let collection_time_before_date = '';   // например '2026.07.02'
+let collection_time_before_time = '';   // например '02:43:50' или '2h 43m'
+
+// Парсит строку времени границы сбора в часы/минуты/секунды.
+// Поддерживает "HH:mm[:ss]", "HH⁚mm[:ss]", "Xh Ym [Zs]"; пустая строка → 00:00:00.
+// Используется в parseCollectionCutoffUnix при разборе настроек collection_time_before_*.
+function parseCollectionTime(timeStr) {
+    if (timeStr == null || String(timeStr).trim() === '') {
+        return { h: 0, m: 0, s: 0 };
+    }
+
+    const s = String(timeStr).trim().replace(/⁚/g, ':');
+
+    const hmMatch = s.match(/^(\d+)\s*h(?:\s*(\d+)\s*m)?(?:\s*(\d+)\s*s)?$/i);
+    if (hmMatch) {
+        return {
+            h: parseInt(hmMatch[1], 10),
+            m: parseInt(hmMatch[2] || '0', 10),
+            s: parseInt(hmMatch[3] || '0', 10)
+        };
+    }
+
+    const colonMatch = s.match(/^(\d{1,2}):(\d{1,2})(?::(\d{1,2}))?$/);
+    if (colonMatch) {
+        return {
+            h: parseInt(colonMatch[1], 10),
+            m: parseInt(colonMatch[2], 10),
+            s: parseInt(colonMatch[3] || '0', 10)
+        };
+    }
+
+    console.log('');
+    console.log('🔴 Error! Не удалось разобрать время границы сбора: "' + timeStr + '"');
+    console.log('Ожидаемые форматы: "02:43:50", "02⁚43⁚50", "02:43", "2h 43m" или пустая строка');
+    process.exit(1);
+}
+
+// Собирает unix-timestamp нижней границы сбора из строк даты и времени.
+// Возвращает null, если дата не задана (ограничение по дате отключено).
+// Используется при старте программы и при сравнении с item.date в MainRequest.
+function parseCollectionCutoffUnix(dateStr, timeStr) {
+    if (dateStr == null || String(dateStr).trim() === '') {
+        return null;
+    }
+
+    const datePart = String(dateStr).trim();
+    const dateMatch = datePart.match(/^(\d{4})\.(\d{1,2})\.(\d{1,2})$/);
+    if (!dateMatch) {
+        console.log('');
+        console.log('🔴 Error! Не удалось разобрать дату границы сбора: "' + dateStr + '"');
+        console.log('Ожидаемый формат даты: "2026.07.02"');
+        process.exit(1);
+    }
+
+    const { h, m, s } = parseCollectionTime(timeStr);
+    const yyyy = dateMatch[1];
+    const mm = String(dateMatch[2]).padStart(2, '0');
+    const dd = String(dateMatch[3]).padStart(2, '0');
+    const HH = String(h).padStart(2, '0');
+    const MM = String(m).padStart(2, '0');
+    const SS = String(s).padStart(2, '0');
+    const cutoff = moment(
+        `${yyyy}-${mm}-${dd} ${HH}:${MM}:${SS}`,
+        'YYYY-MM-DD HH:mm:ss',
+        true
+    );
+
+    if (!cutoff.isValid()) {
+        console.log('');
+        console.log('🔴 Error! Некорректная дата/время границы сбора');
+        process.exit(1);
+    }
+
+    return cutoff.unix();
+}
+
+const collectionCutoffUnix = parseCollectionCutoffUnix(
+    collection_time_before_date,
+    collection_time_before_time
+);
 
 // count - это количество постов, которые вернёт нам сервер max=100
 // offset - это сдвиг, относительно которого нам сервер отправит посты
@@ -346,6 +433,7 @@ await fs.writeFileSync(txtFile_allGifLinks, data2);
 
 let bool_isShowCountOfPosts = false;    // Мы уже вывели общее количество постов?
 let bool_isWeGoingToPoll = false;       // Мы дошли до опроса в обработке постов? Если да, то дальнейшие посты обрабатываться не будут
+let bool_isReachedCollectionDateLimit = false; // Дошли до нижней границы даты сбора? Если да — дальше не сохраняем и не запрашиваем
 
 let counterWaitRequest = 0;             // Сколько запросов мы ждём в данный момент
 let lastEventTime = 0;                  // Для отслеживания времени между запросами
@@ -362,11 +450,18 @@ const oldStartOffset = startOffset;     // Значение оффсета, ко
 
 
 console.log(`Мы начинаем с ${startOffset}го поста сверху страницы, и запрашиваем по ${startCount} постов`)
+if (collectionCutoffUnix != null) {
+    console.log(
+        `⏳ Сохраняем посты до ${moment.unix(collectionCutoffUnix).format('YYYY.MM.DD HH⁚mm⁚ss')} (включительно)`
+    );
+}
 if (allCount != -1) console.log(`Мы хотим загрузить всего ${allCount} постов`)
 else {
 
     if (bool_isStopedBeforePool == true) {
         console.log("📊 Мы хотим загрузить все посты из сообщества, до первого опроса")
+    } else if (collectionCutoffUnix != null) {
+        console.log("📅 Ограничение по дате включено — идём вниз по стене до указанной даты")
     } else {
         console.log("🎲 Мы хотим загрузить все посты из сообщества, до самого конца сообщества")
     }
@@ -441,6 +536,26 @@ v=5.130`);
     // Обрабатываем каждый пост
     json.response.items.forEach(async item => {
                 // Обрабатываем каждый пост асинхронно (одновременно)
+
+                // Уже достигли нижней границы даты — остальные посты в пачке старше, пропускаем
+                if (bool_isReachedCollectionDateLimit) {
+                    return;
+                }
+
+                // Получаем дату публикации поста (unix timestamp → строка для имён файлов)
+                const postDateTime = moment.unix(item.date).format('YYYY.MM.DD HH⁚mm');
+
+                // Посты старше границы сбора не сохраняем и останавливаем дальнейшие запросы
+                if (collectionCutoffUnix != null && item.date < collectionCutoffUnix) {
+                    bool_isReachedCollectionDateLimit = true;
+                    console.log("");
+                    console.log(
+                        `⏳ Пост от ${postDateTime} старше границы ` +
+                        `${moment.unix(collectionCutoffUnix).format('YYYY.MM.DD HH⁚mm⁚ss')} — сохранение остановлено`
+                    );
+                    return;
+                }
+
                 console.log("")
                 int_insCountOfThePost++;    // № обрабатываемого поста, начиная с 1
                 int_lastNumberOfPost++;
@@ -461,10 +576,6 @@ v=5.130`);
                         bool_isShowCountOfPosts = true;
                     }
                 }
-
-                // Получаем дату публикации поста
-
-                const postDateTime = moment.unix(item.date).format('YYYY.MM.DD HH⁚mm');
 
                 /*////////////////////////////////////
                 //      Обработка фото в посте      //
@@ -838,6 +949,13 @@ async function waitForCondition() {
     } else {
         console.log("")
         console.log("Мы загрузили все посты с " + startOffset + " по " + (startOffset + startCount));
+
+        // Дошли до нижней границы даты/времени сбора — завершаем программу
+        if (bool_isReachedCollectionDateLimit) {
+            console.log("⏳ Достигнута указанная дата сбора, на этом программа завершается");
+            await EndOfProgramm();
+            process.exit();
+        }
 
         // Мы дошли до опроса? или если мы не останавливаемся, когда дошли до опроса:
         if (bool_isWeGoingToPoll == false || bool_isStopedBeforePool == false) {
