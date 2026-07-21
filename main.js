@@ -42,7 +42,8 @@ const accessToken = process.env.ACCESS_TOKEN ?? '';
 // const groupId = 'madein_abyss';
 // const groupId = '213046214';
 // const groupId = '236598787';
-let groupId = 'creativityal';
+// let groupId = 'creativityal';
+let groupId = 'b1ackrockshooter';
 
 
 // https://vk.com/public + этот номер, без пробела
@@ -58,7 +59,7 @@ let startOffset = 0     // = 0, если мы хотим начать с вер�
 let startCount = 20     // Лучшее значение - это 10 или 20. Макисмальное = 100
 // let allCount = -1      // Ограничитель, сколько мы обработаем постов // = -1, если без ограничения
 // let allCount = 10      // Ограничитель, сколько мы обработаем постов // = -1, если без ограничения
-let allCount = 100      // Ограничитель, сколько мы обработаем постов // = -1, если без ограничения
+let allCount = 2000      // Ограничитель, сколько мы обработаем постов // = -1, если без ограничения
 
 // count - это количество постов, которые вернёт нам сервер max=100
 // offset - это сдвиг, относительно которого нам сервер отправит посты
@@ -245,6 +246,29 @@ async function downloadImageWithRetries(photoUrl, maxAttempts = 3) {
     throw lastError;
 }
 
+// Выполняет fetch к VK API с повторами при сетевых/TLS-сбоях (до maxAttempts попыток).
+// Используется в MainRequest для wall.get — нестабильная сеть не должна ронять весь парсинг.
+async function fetchVkApiWithRetries(url, maxAttempts = 5) {
+    let lastError;
+
+    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+        try {
+            const res = await fetch(url);
+            return await res.json();
+        } catch (err) {
+            lastError = err;
+            const delayMs = Math.min(1000 * Math.pow(2, attempt - 1), 16000); // 1с, 2с, 4с, 8с, 16с
+            if (attempt < maxAttempts) {
+                console.log(`⚠️ Сетевая ошибка VK API (попытка ${attempt}/${maxAttempts}): ${err.message}`);
+                console.log(`   Повтор через ${(delayMs / 1000).toFixed(0)} с...`);
+                await new Promise(resolve => setTimeout(resolve, delayMs));
+            }
+        }
+    }
+
+    throw lastError;
+}
+
 // Создаю папку Session [Дата и время] - для устранения любых конфликтов
 // В ней создаю папку с названием группы
 
@@ -383,31 +407,38 @@ async function MainRequest(count, offset) {
 
 
 
-    await fetch(`https://api.vk.com/method/wall.get?
+    let json;
+    try {
+        json = await fetchVkApiWithRetries(`https://api.vk.com/method/wall.get?
 owner_id=-${groupId}&
 count=${count}&
 offset=${offset}&
 access_token=${accessToken}&
-v=5.130`)
-        .then(res => res.json())
-        .then(json => {
+v=5.130`);
+    } catch (err) {
+        console.log('');
+        console.log('🔴 Error! Программа остановлена с ошибкой');
+        console.log(`Не удалось связаться с VK API после нескольких попыток: ${err.message}`);
+        console.log(`Остановились на offset=${offset}, count=${count}`);
+        process.exit(1);
+    }
 
-            // Информация о количестве запрашиваемых постов:
-            let int_insCountOfThePost = 0;
+    // Информация о количестве запрашиваемых постов:
+    let int_insCountOfThePost = 0;
 
-            // Проверяем, что API вернул корректный ответ
-            if (json.error || !json.response || !Array.isArray(json.response.items)) {
-                console.log('');
-                console.log('🔴 Error! Программа остановлена с ошибкой');
-                console.log('API вернул неверный ответ, проверьте параметры запроса');
-                if (json.error) {
-                    console.log(`Код ошибки VK API: ${json.error.error_code}, сообщение: ${json.error.error_msg}`);
-                }
-                process.exit();
-            }
+    // Проверяем, что API вернул корректный ответ
+    if (json.error || !json.response || !Array.isArray(json.response.items)) {
+        console.log('');
+        console.log('🔴 Error! Программа остановлена с ошибкой');
+        console.log('API вернул неверный ответ, проверьте параметры запроса');
+        if (json.error) {
+            console.log(`Код ошибки VK API: ${json.error.error_code}, сообщение: ${json.error.error_msg}`);
+        }
+        process.exit();
+    }
 
-            // Обрабатываем каждый пост
-            json.response.items.forEach(async item => {
+    // Обрабатываем каждый пост
+    json.response.items.forEach(async item => {
                 // Обрабатываем каждый пост асинхронно (одновременно)
                 console.log("")
                 int_insCountOfThePost++;    // № обрабатываемого поста, начиная с 1
@@ -770,7 +801,6 @@ v=5.130`)
                     });
                 }
             });
-        });
 
     console.log("")
     console.log("🕑")

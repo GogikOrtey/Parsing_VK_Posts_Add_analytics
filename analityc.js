@@ -8,12 +8,12 @@ import { fileURLToPath } from 'url';
 
 // ---------- Режим аналитики ----------
 
-// export const isAnalitycs = true;
-export const isAnalitycs = false;
+export const isAnalitycs = true;
+// export const isAnalitycs = false;
 
 // Скачивание случайного поста
-const DOWNLOAD_RANDOM_IMAGE = true;
-// const DOWNLOAD_RANDOM_IMAGE = false;
+// const DOWNLOAD_RANDOM_IMAGE = true;
+const DOWNLOAD_RANDOM_IMAGE = false;
 
 // ---------- Настройки (как в main.js) ----------
 
@@ -21,7 +21,18 @@ const accessToken = process.env.ACCESS_TOKEN ?? '';
 // ID, короткое имя или ссылка на группу ВКонтакте
 // Примеры: '236598787', 'creativityal', 'https://vk.com/creativityal'
 // const groupId = '213046214';
-let groupId = 'creativityal';
+// let groupId = 'creativityal';
+let groupId = 'https://vk.com/b1ackrockshooter';
+
+
+
+
+
+
+
+
+
+
 
 const SAMPLE_POSTS_COUNT = 20;
 const SERVICE_BYTES_PER_POST = 50;
