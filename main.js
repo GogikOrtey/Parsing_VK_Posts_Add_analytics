@@ -353,15 +353,32 @@ await fs.writeFileSync(txtFile_allGifLinks, data2);
 let bool_isShowCountOfPosts = false;    // Мы уже вывели общее количество постов?
 let bool_isWeGoingToPoll = false;       // Мы дошли до опроса в обработке постов? Если да, то дальнейшие посты обрабатываться не будут
 let bool_isReachedCollectionDateLimit = false; // Дошли до нижней границы даты сбора? Если да — дальше не сохраняем и не запрашиваем
+let bool_isReachedAllCountLimit = false; // Достигли allCount обработанных постов?
 
 let counterWaitRequest = 0;             // Сколько запросов мы ждём в данный момент
 let lastEventTime = 0;                  // Для отслеживания времени между запросами
 let timeDifference = 0;                 // Разница между последним запросом
 let int_lastNumberOfPost = -1;          // № последнего поста
 let allCountPostOfThisGroup = 0;        // Общее количество постов в группе
+let lastRequestCount = startCount;      // Сколько постов запросили в последнем wall.get
 
 const oldStartOffset = startOffset;     // Значение оффсета, которое не меняется
 
+// Сколько постов запросить в следующем wall.get с учётом startCount и остатка allCount.
+// Используется в waitForCondition перед вызовом MainRequest.
+function getNextRequestCount() {
+    if (allCount == -1) {
+        return startCount;
+    }
+
+    const alreadyProcessed = int_lastNumberOfPost + 1;
+    const remaining = allCount - alreadyProcessed;
+    if (remaining <= 0) {
+        return 0;
+    }
+
+    return Math.min(startCount, remaining);
+}
 
 
 
@@ -537,7 +554,13 @@ v=5.130`);
                 // Обрабатываем каждый пост асинхронно (одновременно)
 
                 // Уже достигли нижней границы даты — остальные посты в пачке старше, пропускаем
-                if (bool_isReachedCollectionDateLimit) {
+                if (bool_isReachedCollectionDateLimit || bool_isReachedAllCountLimit) {
+                    return;
+                }
+
+                // Лимит allCount: не обрабатываем посты сверх заданного количества
+                if (allCount != -1 && (int_lastNumberOfPost + 1) >= allCount) {
+                    bool_isReachedAllCountLimit = true;
                     return;
                 }
 
@@ -558,6 +581,11 @@ v=5.130`);
                 console.log("")
                 int_insCountOfThePost++;    // № обрабатываемого поста, начиная с 1
                 int_lastNumberOfPost++;
+
+                // После этого поста лимит allCount исчерпан — следующие в пачке не трогаем
+                if (allCount != -1 && (int_lastNumberOfPost + 1) >= allCount) {
+                    bool_isReachedAllCountLimit = true;
+                }
 
                 // Выводим всю информацию о посте
                 //console.log("📚 Информация о посте: ", item);
@@ -948,14 +976,22 @@ async function waitForCondition() {
     if (bool_isFirstStart == true) {
         await new Promise(resolve => setTimeout(resolve, 4000)); // Ждем 1 секунду
         bool_isFirstStart = false;
-        MainRequest(startCount, startOffset);
+        lastRequestCount = getNextRequestCount();
+        MainRequest(lastRequestCount, startOffset);
     } else {
         console.log("")
-        console.log("Мы загрузили все посты с " + startOffset + " по " + (startOffset + startCount));
+        console.log("Мы загрузили все посты с " + startOffset + " по " + (startOffset + lastRequestCount));
 
         // Дошли до нижней границы даты/времени сбора — завершаем программу
         if (bool_isReachedCollectionDateLimit) {
             console.log("⏳ Достигнута указанная дата сбора, на этом программа завершается");
+            await EndOfProgramm();
+            process.exit();
+        }
+
+        // Достигли лимита allCount по числу обработанных постов
+        if (bool_isReachedAllCountLimit || (allCount != -1 && (int_lastNumberOfPost + 1) >= allCount)) {
+            console.log("Мы загрузили достаточно постов (" + (int_lastNumberOfPost + 1) + "), на этом программа завершается");
             await EndOfProgramm();
             process.exit();
         }
@@ -975,20 +1011,16 @@ async function waitForCondition() {
 
             console.log("Продолжаем загружать посты")
 
-            startOffset += startCount; // Каждый раз делаем шаг на то количество постов, которое изначально запросили
+            startOffset += lastRequestCount; // Сдвигаем на реально запрошенное в прошлом запросе число постов
 
-            // Проверка на количество постов, которое мы изначально хотели загрузить
-            if (allCount != -1) {
-                // console.log("—————————————————————— startOffset - oldStartOffset = " + (startOffset - oldStartOffset))
-                if ((startOffset - oldStartOffset) >= allCount) {
-                    console.log("Мы загрузили достаточно постов (" + (startOffset - oldStartOffset) + "), на этом программа завершается")
-                    startOffset -= startCount;
-                    await EndOfProgramm();
-                    process.exit();
-                }
+            lastRequestCount = getNextRequestCount();
+            if (lastRequestCount <= 0) {
+                console.log("Мы загрузили достаточно постов (" + (int_lastNumberOfPost + 1) + "), на этом программа завершается");
+                await EndOfProgramm();
+                process.exit();
             }
 
-            MainRequest(startCount, startOffset); // И запускаем запрос заново
+            MainRequest(lastRequestCount, startOffset); // И запускаем запрос заново
         } else {
             await EndOfProgramm();
         }
