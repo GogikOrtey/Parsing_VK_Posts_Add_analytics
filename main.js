@@ -45,7 +45,8 @@ const accessToken = process.env.ACCESS_TOKEN ?? '';
 // let groupId = 'creativityal';
 // let groupId = 'b1ackrockshooter';
 // let groupId = 'iichan228';
-let groupId = 'snowarts';
+// let groupId = 'snowarts';
+let groupId = 'snowarts'; // https://vk.ru/snowarts
 
 
 // https://vk.com/public + этот номер, без пробела
@@ -59,95 +60,14 @@ let groupId = 'snowarts';
 
 let startOffset = 0     // = 0, если мы хотим начать с верха сообщества    
 let startCount = 20     // Лучшее значение - это 10 или 20. Макисмальное = 100
-// let allCount = -1      // Ограничитель, сколько мы обработаем постов // = -1, если без ограничения
+let allCount = -1      // Ограничитель, сколько мы обработаем постов // = -1, если без ограничения
 // let allCount = 10      // Ограничитель, сколько мы обработаем постов // = -1, если без ограничения
-let allCount = 100      // Ограничитель, сколько мы обработаем постов // = -1, если без ограничения
+// let allCount = 100      // Ограничитель, сколько мы обработаем постов // = -1, если без ограничения
 
-// Нижняя граница по дате/времени публикации: сохраняем посты от верха стены
-// вниз до этой точки (включительно). Пустая дата = без ограничения по дате.
-// Дата: "2026.07.02"
-// Время (необязательно): "02:43:50" | "02⁚43⁚50" | "02:43" | "2h 43m"
-// Если время не указано — считаем 00:00:00 указанной даты.
-let collection_time_before_date = '';   // например '2026.07.02'
-let collection_time_before_time = '';   // например '02:43:50' или '2h 43m'
-
-// Парсит строку времени границы сбора в часы/минуты/секунды.
-// Поддерживает "HH:mm[:ss]", "HH⁚mm[:ss]", "Xh Ym [Zs]"; пустая строка → 00:00:00.
-// Используется в parseCollectionCutoffUnix при разборе настроек collection_time_before_*.
-function parseCollectionTime(timeStr) {
-    if (timeStr == null || String(timeStr).trim() === '') {
-        return { h: 0, m: 0, s: 0 };
-    }
-
-    const s = String(timeStr).trim().replace(/⁚/g, ':');
-
-    const hmMatch = s.match(/^(\d+)\s*h(?:\s*(\d+)\s*m)?(?:\s*(\d+)\s*s)?$/i);
-    if (hmMatch) {
-        return {
-            h: parseInt(hmMatch[1], 10),
-            m: parseInt(hmMatch[2] || '0', 10),
-            s: parseInt(hmMatch[3] || '0', 10)
-        };
-    }
-
-    const colonMatch = s.match(/^(\d{1,2}):(\d{1,2})(?::(\d{1,2}))?$/);
-    if (colonMatch) {
-        return {
-            h: parseInt(colonMatch[1], 10),
-            m: parseInt(colonMatch[2], 10),
-            s: parseInt(colonMatch[3] || '0', 10)
-        };
-    }
-
-    console.log('');
-    console.log('🔴 Error! Не удалось разобрать время границы сбора: "' + timeStr + '"');
-    console.log('Ожидаемые форматы: "02:43:50", "02⁚43⁚50", "02:43", "2h 43m" или пустая строка');
-    process.exit(1);
-}
-
-// Собирает unix-timestamp нижней границы сбора из строк даты и времени.
-// Возвращает null, если дата не задана (ограничение по дате отключено).
-// Используется при старте программы и при сравнении с item.date в MainRequest.
-function parseCollectionCutoffUnix(dateStr, timeStr) {
-    if (dateStr == null || String(dateStr).trim() === '') {
-        return null;
-    }
-
-    const datePart = String(dateStr).trim();
-    const dateMatch = datePart.match(/^(\d{4})\.(\d{1,2})\.(\d{1,2})$/);
-    if (!dateMatch) {
-        console.log('');
-        console.log('🔴 Error! Не удалось разобрать дату границы сбора: "' + dateStr + '"');
-        console.log('Ожидаемый формат даты: "2026.07.02"');
-        process.exit(1);
-    }
-
-    const { h, m, s } = parseCollectionTime(timeStr);
-    const yyyy = dateMatch[1];
-    const mm = String(dateMatch[2]).padStart(2, '0');
-    const dd = String(dateMatch[3]).padStart(2, '0');
-    const HH = String(h).padStart(2, '0');
-    const MM = String(m).padStart(2, '0');
-    const SS = String(s).padStart(2, '0');
-    const cutoff = moment(
-        `${yyyy}-${mm}-${dd} ${HH}:${MM}:${SS}`,
-        'YYYY-MM-DD HH:mm:ss',
-        true
-    );
-
-    if (!cutoff.isValid()) {
-        console.log('');
-        console.log('🔴 Error! Некорректная дата/время границы сбора');
-        process.exit(1);
-    }
-
-    return cutoff.unix();
-}
-
-const collectionCutoffUnix = parseCollectionCutoffUnix(
-    collection_time_before_date,
-    collection_time_before_time
-);
+// Нижняя граница по дате/времени публикации: сохраняем посты от верха стены вниз до этой точки (включительно)
+// Время (необязательно): "02:43:50" | "02⁚43⁚50" | "02:43" | "2h 43m". // Если время не указано — считаем 00:00:00 указанной даты.
+let collection_time_before_date = "2026.07.02"   // например "2026.07.02" // Пустая дата = без ограничения по дате
+let collection_time_before_time = "02⁚43⁚50"   // например "02:43:50" или "2h 43m"
 
 // count - это количество постов, которые вернёт нам сервер max=100
 // offset - это сдвиг, относительно которого нам сервер отправит посты
@@ -266,7 +186,6 @@ goodGroupName = sanitizeFilename(groupInfo.name);
 console.log("Название группы: " + goodGroupName);
 console.log("ID группы: " + groupId);
 console.log("");
-
 
 
 
@@ -444,6 +363,86 @@ let allCountPostOfThisGroup = 0;        // Общее количество по�
 const oldStartOffset = startOffset;     // Значение оффсета, которое не меняется
 
 
+
+
+
+// Парсит строку времени границы сбора в часы/минуты/секунды.
+// Поддерживает "HH:mm[:ss]", "HH⁚mm[:ss]", "Xh Ym [Zs]"; пустая строка → 00:00:00.
+// Используется в parseCollectionCutoffUnix при разборе настроек collection_time_before_*.
+function parseCollectionTime(timeStr) {
+    if (timeStr == null || String(timeStr).trim() === '') {
+        return { h: 0, m: 0, s: 0 };
+    }
+
+    const s = String(timeStr).trim().replace(/⁚/g, ':');
+
+    const hmMatch = s.match(/^(\d+)\s*h(?:\s*(\d+)\s*m)?(?:\s*(\d+)\s*s)?$/i);
+    if (hmMatch) {
+        return {
+            h: parseInt(hmMatch[1], 10),
+            m: parseInt(hmMatch[2] || '0', 10),
+            s: parseInt(hmMatch[3] || '0', 10)
+        };
+    }
+
+    const colonMatch = s.match(/^(\d{1,2}):(\d{1,2})(?::(\d{1,2}))?$/);
+    if (colonMatch) {
+        return {
+            h: parseInt(colonMatch[1], 10),
+            m: parseInt(colonMatch[2], 10),
+            s: parseInt(colonMatch[3] || '0', 10)
+        };
+    }
+
+    console.log('');
+    console.log('🔴 Error! Не удалось разобрать время границы сбора: "' + timeStr + '"');
+    console.log('Ожидаемые форматы: "02:43:50", "02⁚43⁚50", "02:43", "2h 43m" или пустая строка');
+    process.exit(1);
+}
+
+// Собирает unix-timestamp нижней границы сбора из строк даты и времени.
+// Возвращает null, если дата не задана (ограничение по дате отключено).
+// Используется при старте программы и при сравнении с item.date в MainRequest.
+function parseCollectionCutoffUnix(dateStr, timeStr) {
+    if (dateStr == null || String(dateStr).trim() === '') {
+        return null;
+    }
+
+    const datePart = String(dateStr).trim();
+    const dateMatch = datePart.match(/^(\d{4})\.(\d{1,2})\.(\d{1,2})$/);
+    if (!dateMatch) {
+        console.log('');
+        console.log('🔴 Error! Не удалось разобрать дату границы сбора: "' + dateStr + '"');
+        console.log('Ожидаемый формат даты: "2026.07.02"');
+        process.exit(1);
+    }
+
+    const { h, m, s } = parseCollectionTime(timeStr);
+    const yyyy = dateMatch[1];
+    const mm = String(dateMatch[2]).padStart(2, '0');
+    const dd = String(dateMatch[3]).padStart(2, '0');
+    const HH = String(h).padStart(2, '0');
+    const MM = String(m).padStart(2, '0');
+    const SS = String(s).padStart(2, '0');
+    const cutoff = moment(
+        `${yyyy}-${mm}-${dd} ${HH}:${MM}:${SS}`,
+        'YYYY-MM-DD HH:mm:ss',
+        true
+    );
+
+    if (!cutoff.isValid()) {
+        console.log('');
+        console.log('🔴 Error! Некорректная дата/время границы сбора');
+        process.exit(1);
+    }
+
+    return cutoff.unix();
+}
+
+const collectionCutoffUnix = parseCollectionCutoffUnix(
+    collection_time_before_date,
+    collection_time_before_time
+);
 
 
 
@@ -918,6 +917,10 @@ v=5.130`);
     console.log("🕑")
     waitForCondition();
 }
+
+
+
+
 
 
 let bool_isFirstStart = true;       // Это первый запуск запроса?
