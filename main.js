@@ -43,7 +43,8 @@ const accessToken = process.env.ACCESS_TOKEN ?? '';
 // const groupId = '213046214';
 // const groupId = '236598787';
 // let groupId = 'creativityal';
-let groupId = 'b1ackrockshooter';
+// let groupId = 'b1ackrockshooter';
+let groupId = 'iichan228';
 
 
 // https://vk.com/public + этот номер, без пробела
@@ -59,7 +60,7 @@ let startOffset = 0     // = 0, если мы хотим начать с вер�
 let startCount = 20     // Лучшее значение - это 10 или 20. Макисмальное = 100
 // let allCount = -1      // Ограничитель, сколько мы обработаем постов // = -1, если без ограничения
 // let allCount = 10      // Ограничитель, сколько мы обработаем постов // = -1, если без ограничения
-let allCount = 2000      // Ограничитель, сколько мы обработаем постов // = -1, если без ограничения
+let allCount = 100      // Ограничитель, сколько мы обработаем постов // = -1, если без ограничения
 
 // count - это количество постов, которые вернёт нам сервер max=100
 // offset - это сдвиг, относительно которого нам сервер отправит посты
@@ -360,7 +361,7 @@ const oldStartOffset = startOffset;     // Значение оффсета, ко
 
 
 
-console.log(`Мы начинаем с ${startOffset} поста сверху страницы, и запрашиваем ${startCount} постов`)
+console.log(`Мы начинаем с ${startOffset}го поста сверху страницы, и запрашиваем по ${startCount} постов`)
 if (allCount != -1) console.log(`Мы хотим загрузить всего ${allCount} постов`)
 else {
 
