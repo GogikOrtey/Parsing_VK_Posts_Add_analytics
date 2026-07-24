@@ -78,9 +78,10 @@ if (!groupInfo) {
 
 groupId = String(groupInfo.id);
 
-console.log('Название группы:', groupInfo.name);
-console.log('ID группы:', groupId);
-console.log('');
+// Ссылка на группу: короткое имя, если есть, иначе club{id}
+const groupLink = groupInfo.screen_name
+    ? `https://vk.com/${groupInfo.screen_name}`
+    : `https://vk.com/club${groupId}`;
 
 // Берём 2 поста с верха стены: items[0] — первый, items[1] — второй сверху
 const wall = await vkApi('wall.get', {
@@ -91,11 +92,9 @@ const wall = await vkApi('wall.get', {
 
 const posts = wall?.items ?? [];
 
-console.log('Всего постов на стене (по данным VK):', wall?.count ?? '?');
-console.log('Получено постов в ответе:', posts.length);
-console.log('');
-
 if (posts.length < 2) {
+    console.log('Ссылка на группу:', groupLink);
+    console.log('');
     console.log('🔴 Error! На стене меньше двух постов — второго сверху нет');
     console.log('Полный ответ wall.get:');
     console.log(JSON.stringify(wall, null, 2));
@@ -103,6 +102,19 @@ if (posts.length < 2) {
 }
 
 const secondPost = posts[1];
+// const secondPost = posts[4];
+
+// Прямая ссылка на пост: wall{owner_id}_{post_id}
+const postLink = `https://vk.com/wall${secondPost.owner_id}_${secondPost.id}`;
+
+console.log('Ссылка на группу:', groupLink);
+console.log('Ссылка на пост:  ', postLink);
+console.log('');
+console.log('Название группы:', groupInfo.name);
+console.log('ID группы:', groupId);
+console.log('Всего постов на стене (по данным VK):', wall?.count ?? '?');
+console.log('Получено постов в ответе:', posts.length);
+console.log('');
 
 console.log('========== Второй сверху пост (сырые данные) ==========');
 console.log(JSON.stringify(secondPost, null, 2));
