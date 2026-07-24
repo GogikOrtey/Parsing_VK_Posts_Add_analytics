@@ -1,109 +1,113 @@
-import { spawn, execFile } from 'child_process';
-import fs from 'fs';
-import path from 'path';
-import { fileURLToPath } from 'url';
+import 'dotenv/config';
+import fetch from 'node-fetch';
 
-const projectRoot = path.dirname(fileURLToPath(import.meta.url));
+// ---------- Настройки ----------
 
-// Папка сессии относительно корня проекта
-const folderPath = path.join(
-    projectRoot,
-    'main',
-    'Session [2026.07.05 06⁚59⁚43] Alchemy of Creativity  НейронкаАрты'
-);
+// Ключ доступа к API (задаётся в файле .env)
+const accessToken = process.env.ACCESS_TOKEN ?? '';
 
-const absolutePath = path.resolve(folderPath);
+// ID, короткое имя или ссылка на группу ВКонтакте
+// Примеры: '224924750', 'creativityal', 'https://vk.com/creativityal', 'https://vk.ru/snowarts'
+let groupId = 'https://vk.ru/snowarts';
 
-console.log('Корень проекта:', projectRoot);
-console.log('Путь к папке:  ', absolutePath);
-console.log('Папка существует:', fs.existsSync(absolutePath));
+const API_VERSION = '5.130';
+
+// ---------- Программа ----------
+
+console.log('');
+console.log('—————————————————————————————————————————————');
+console.log('test.js — данные второго сверху поста группы');
+console.log('—————————————————————————————————————————————');
 console.log('');
 
-// Способ 1: explorer.exe через spawn (detached) — как в main.js
-function openMethod1() {
-    console.log('→ Способ 1: spawn explorer.exe (detached)');
-
-    const child = spawn('explorer.exe', [absolutePath], {
-        detached: true,
-        stdio: 'ignore',
-        windowsHide: true
-    });
-
-    child.on('error', (err) => console.log('  Ошибка:', err.message));
-    child.unref();
+if (accessToken === '') {
+    console.log('В программе не указан Ключ доступа к API. Его нужно указать в файле .env (переменная ACCESS_TOKEN)');
+    console.log('🔴 Error! Программа остановлена с ошибкой');
+    process.exit(1);
 }
 
-// Способ 2: explorer.exe через execFile
-function openMethod2() {
-    console.log('→ Способ 2: execFile explorer.exe');
+// Извлекает идентификатор группы из числового id, короткого имени или ссылки vk.com/vk.ru/...
+// Используется перед groups.getById для нормализации значения groupId из настроек.
+function parseGroupIdInput(raw) {
+    let value = String(raw).trim();
 
-    execFile('explorer.exe', [absolutePath], { windowsHide: true }, (err) => {
-        if (err) console.log('  Ошибка:', err.message);
-        else console.log('  execFile завершился без ошибки');
-    });
-}
-
-// Способ 3: cmd start — часто надёжнее для путей с пробелами и скобками
-function openMethod3() {
-    console.log('→ Способ 3: cmd /c start');
-
-    const child = spawn('cmd.exe', ['/c', 'start', '', absolutePath], {
-        detached: true,
-        stdio: 'ignore',
-        windowsHide: true
-    });
-
-    child.on('error', (err) => console.log('  Ошибка:', err.message));
-    child.unref();
-}
-
-// Способ 4: PowerShell Start-Process
-function openMethod4() {
-    console.log('→ Способ 4: PowerShell Start-Process explorer');
-
-    const psCommand = `Start-Process explorer.exe -ArgumentList '${absolutePath.replace(/'/g, "''")}'`;
-    const child = spawn('powershell.exe', ['-NoProfile', '-Command', psCommand], {
-        detached: true,
-        stdio: 'ignore',
-        windowsHide: true
-    });
-
-    child.on('error', (err) => console.log('  Ошибка:', err.message));
-    child.unref();
-}
-
-const method = process.argv[2] ?? '1';
-
-const methods = {
-    '1': openMethod1,
-    '2': openMethod2,
-    '3': openMethod3,
-    '4': openMethod4,
-    'all': () => {
-        openMethod1();
-        setTimeout(openMethod2, 1500);
-        setTimeout(openMethod3, 3000);
-        setTimeout(openMethod4, 4500);
+    const urlMatch = value.match(/(?:https?:\/\/)?(?:m\.)?vk\.(?:com|ru)\/([^/?#]+)/i);
+    if (urlMatch) {
+        value = urlMatch[1];
     }
-};
 
-if (!methods[method]) {
-    console.log('Использование: node test.js [1|2|3|4|all]');
-    console.log('  1 — spawn explorer (по умолчанию)');
-    console.log('  2 — execFile explorer');
-    console.log('  3 — cmd start');
-    console.log('  4 — PowerShell Start-Process');
-    console.log('  all — все способы по очереди');
+    const publicClubMatch = value.match(/^(?:public|club|event)(\d+)$/i);
+    if (publicClubMatch) {
+        value = publicClubMatch[1];
+    }
+
+    return value;
+}
+
+// Запрос к VK API: отправляет метод, возвращает response или завершает программу при ошибке.
+// Используется для groups.getById и wall.get.
+async function vkApi(method, params = {}) {
+    const query = new URLSearchParams({
+        ...params,
+        access_token: accessToken,
+        v: API_VERSION,
+    });
+
+    const response = await fetch(`https://api.vk.com/method/${method}?${query}`);
+    const json = await response.json();
+
+    if (json.error) {
+        console.log('');
+        console.log('🔴 Error! Программа остановлена с ошибкой');
+        console.log(`Код ошибки VK API: ${json.error.error_code}, сообщение: ${json.error.error_msg}`);
+        process.exit(1);
+    }
+
+    return json.response;
+}
+
+groupId = parseGroupIdInput(groupId);
+
+const groupInfoList = await vkApi('groups.getById', { group_id: groupId });
+const groupInfo = groupInfoList?.[0];
+
+if (!groupInfo) {
+    console.log('🔴 Error! Не удалось получить информацию о группе, проверьте groupId');
     process.exit(1);
 }
 
-if (!fs.existsSync(absolutePath)) {
-    console.log('⚠️ Папка не найдена. Проверьте имя сессии в test.js');
+groupId = String(groupInfo.id);
+
+console.log('Название группы:', groupInfo.name);
+console.log('ID группы:', groupId);
+console.log('');
+
+// Берём 2 поста с верха стены: items[0] — первый, items[1] — второй сверху
+const wall = await vkApi('wall.get', {
+    owner_id: `-${groupId}`,
+    offset: '0',
+    count: '2',
+});
+
+const posts = wall?.items ?? [];
+
+console.log('Всего постов на стене (по данным VK):', wall?.count ?? '?');
+console.log('Получено постов в ответе:', posts.length);
+console.log('');
+
+if (posts.length < 2) {
+    console.log('🔴 Error! На стене меньше двух постов — второго сверху нет');
+    console.log('Полный ответ wall.get:');
+    console.log(JSON.stringify(wall, null, 2));
     process.exit(1);
 }
 
-methods[method]();
+const secondPost = posts[1];
 
-if (method === '2') {
-    setTimeout(() => process.exit(0), 3000);
-}
+console.log('========== Второй сверху пост (сырые данные) ==========');
+console.log(JSON.stringify(secondPost, null, 2));
+console.log('');
+console.log('========== Полный ответ wall.get (для справки) ==========');
+console.log(JSON.stringify(wall, null, 2));
+console.log('');
+console.log('🟢 Готово');
