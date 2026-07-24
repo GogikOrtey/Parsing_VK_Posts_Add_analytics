@@ -1,0 +1,392 @@
+
+    // Обрабатываем каждый пост
+    json.response.items.forEach(async item => {
+                // Обрабатываем каждый пост асинхронно (одновременно)
+
+                // Уже достигли нижней границы даты — остальные посты в пачке старше, пропускаем
+                if (bool_isReachedCollectionDateLimit || bool_isReachedAllCountLimit) {
+                    return;
+                }
+
+                // Лимит allCount: не обрабатываем посты сверх заданного количества
+                if (allCount != -1 && (int_lastNumberOfPost + 1) >= allCount) {
+                    bool_isReachedAllCountLimit = true;
+                    return;
+                }
+
+                // Получаем дату публикации поста (unix timestamp → строка для имён файлов)
+                const postDateTime = moment.unix(item.date).format('YYYY.MM.DD HH⁚mm');
+
+                // Посты старше границы сбора не сохраняем и останавливаем дальнейшие запросы
+                if (collectionCutoffUnix != null && item.date < collectionCutoffUnix) {
+                    bool_isReachedCollectionDateLimit = true;
+                    console.log("");
+                    console.log(
+                        `⏳ Пост от ${postDateTime} старше границы ` +
+                        `${moment.unix(collectionCutoffUnix).format('YYYY.MM.DD HH⁚mm⁚ss')} — сохранение остановлено`
+                    );
+                    return;
+                }
+
+                console.log("")
+                int_insCountOfThePost++;    // № обрабатываемого поста, начиная с 1
+                int_lastNumberOfPost++;
+
+                // После этого поста лимит allCount исчерпан — следующие в пачке не трогаем
+                if (allCount != -1 && (int_lastNumberOfPost + 1) >= allCount) {
+                    bool_isReachedAllCountLimit = true;
+                }
+
+                // Выводим всю информацию о посте
+                //console.log("📚 Информация о посте: ", item);
+
+                // Выводим общее количество постов в группе:
+                if (bool_isShowCountOfPosts == false) {
+                    if (offset == 0) {
+                        // Ищем id поста:
+                        let idPost = 'id' in item ? item.id : '';
+                        console.log("Общее количество постов в группе: " + idPost)
+                        allCountPostOfThisGroup = idPost;
+                        console.log("")
+                        bool_isShowCountOfPosts = true;
+                    } else {
+                        bool_isShowCountOfPosts = true;
+                    }
+                }
+
+                /*////////////////////////////////////
+                //      Обработка фото в посте      //
+                ////////////////////////////////////*/
+
+
+                // Проверяем, есть ли в посте фотографии или пересланные посты
+                let attachments = 'attachments' in item ? item.attachments : [];
+
+
+                if ('copy_history' in item && item.copy_history.length > 0) {
+                    if ('attachments' in item.copy_history[0]) {
+                        // Если пересланные посты есть, то мы совмещаем их историю, позволяя нашей программе 
+                        // обработать фотографии и из этих вложенных постов
+                        attachments = attachments.concat(item.copy_history[0].attachments);
+                    }
+                }
+
+                const photos = attachments.filter(attachment => attachment.type === 'photo');
+
+                let bool_ismultiplyPhotosInThePost = false; // = true, если в посте > 1 фотографии
+                let countImage = 1;
+
+                if (photos.length > 1) {
+                    console.log("📚 В посте несколько фотографий");
+                    bool_ismultiplyPhotosInThePost = true;
+                }
+
+
+
+
+                /*////////////////////////////////////
+                //     Обработка текста в посте     //
+                ////////////////////////////////////*/
+
+                // !!! Сделать добавление 120 символов текста поста к картинке
+                // Если не помещается - текст образается, вставляется троеточие, и полный текст сохраняется в .txt файл
+
+                // Проверяем, есть ли в посте текст
+                let postText = 'text' in item ? item.text : '';
+
+                if ('copy_history' in item && item.copy_history.length > 0) {
+                    if ('text' in item.copy_history[0]) {
+
+                        // Совмещаем текстовые описания поста и вложенного поста
+                        if (postText != '' && (item.copy_history[0].text != '')) {
+                            postText += '\n——————————————————————\n' + item.copy_history[0].text;
+                        } else if (postText == '' && (item.copy_history[0].text != '')) {
+                            postText += item.copy_history[0].text;
+                        }
+                    }
+                }
+
+                let goodPostText = sanitizeFilename2(postText)
+
+                if (goodPostText.length > 120) {
+                    // Обрезаю строку до 120 символов, если она слишком длинная
+                    goodPostText = goodPostText.substring(0, 120);
+                    goodPostText += "..."
+
+                    CreateTextFileForDescrPost();
+                } else {
+                    // Проверяю, не удалились ли случайно лишние символы из описани
+                    // Если удалились - всё равно создаю текстовый документ с описанием поста. На всякий случай
+
+                    if (goodPostText != postText) {
+                        if (bool_isinfoShow) console.log("! Отфильтрованный текст неверный, сохраняю копию в текстовом документе")
+                        if (bool_isinfoShow) console.log("")
+                        if (bool_isinfoShow) console.log("goodPostText = " + goodPostText)
+                        if (bool_isinfoShow) console.log("postText = " + postText)
+                        if (bool_isinfoShow) console.log("")
+                        CreateTextFileForDescrPost();
+                    }
+                }
+
+                // Cоздаю текстовый документ с описанием поста
+                function CreateTextFileForDescrPost() {
+                    if (postText != '') {
+
+                        let fileName = '[' + postDateTime + '] ' + goodPostText;
+                        let path = floberGroupName + `/${fileName}.txt`;
+
+                        // Сохраняю этот текст в папке
+                        fs.writeFile(path, postText, err => {
+                            if (err) throw err;
+                            console.log("📄 Текстовый файл с именем " + fileName + " сохранён в папке " + floberGroupName);
+
+                            // Получаю timestamp из postDateTime
+                            let timestamp = moment(postDateTime, 'YYYY.MM.DD HH⁚mm').valueOf();
+
+                            // Устанавливаю время создания файла
+                            fs.utimes(path, timestamp / 1000, timestamp / 1000, (err) => {
+                                if (err) throw err;
+                                if (bool_isinfoShow) console.log("⏰ Время создания файла " + fileName +
+                                    " установлено на " + postDateTime);
+                            });
+                        });
+                    }
+                }
+
+
+
+                /*////////////////////////////////////
+                //              Другое              //
+                ////////////////////////////////////*/
+
+
+                // Обрабатываем каждое вложение, и выводим его тип контента                                   
+                attachments.forEach(attachment => {
+                    // Выводим тип контента
+                    let occ = '⚠️🟪'
+                    if (attachment.type == "photo") occ = '📸';
+                    if (attachment.type == "video") occ = '📽️';
+                    if (attachment.type == "gif") occ = '🕹️';            // ? Проверить, работает ли это
+                    let globalCountPost = offset + int_insCountOfThePost;
+                    // console.log(`${occ} Пост №${int_insCountOfThePost} Тип контента:`, attachment.type); 
+                    console.log(`${occ} Пост №${globalCountPost} Тип контента:`, attachment.type);
+                });
+
+
+
+                /*////////////////////////////////////////////////////////
+                //                   Сохранение фото                    //
+                /////////////////////////////////////////////////////// */
+
+
+                let addCount = 1;
+
+                // Для всех изображений, в полученном наборе:
+                for (let photoAttachment of photos) {
+                    // Получаем URL фотографии с максимальным разрешением
+                    const photo = photoAttachment.photo;
+                    //const photoUrl = photo.sizes[photo.sizes.length - 1].url;
+
+                    let maxResolution = 0;
+                    let maxResolutionUrl = '';
+
+                    // Проходим по всем разрешениям картинки, и выбираем то, которое больше всего
+                    for (let size of photo.sizes) {
+                        let resolution = size.width * size.height;
+                        if (resolution > maxResolution) {
+                            maxResolution = resolution;
+                            maxResolutionUrl = size.url;
+                        }
+                    }
+
+                    const photoUrl = maxResolutionUrl;
+
+                    const globalCountPost = offset + int_insCountOfThePost;
+
+                    try {
+                        // Запрашиваю картинки, по ссылкам, полученным из поста
+                        // Эти запросы выполняются асинхронно
+                        counterWaitRequest++;
+                        let buffer = await downloadImageWithRetries(photoUrl);
+
+                        //let hash = createHash(buffer);                    // Вычисляем хеш изображения
+                        //console.log("hash = " + hash)
+
+                        let fileName = '[' + postDateTime + ']';            // Задаю имя для изображения
+
+                        // Если в посте было описание, то я добавляю его в название файла
+                        if (goodPostText != '') {
+                            fileName += ' ' + goodPostText;
+                        }
+
+                        if (bool_ismultiplyPhotosInThePost === true) {
+                            // Если изображений несколько, то для каждого задаю его номер в посте
+                            fileName += " - " + countImage;
+                            countImage++;
+                        }
+
+                        do {
+                            let tempFileName = fileName;
+                            if (addCount > 1) {
+                                tempFileName += " (" + addCount + ")";
+                            }
+                            tempFileName += ".jpg";
+
+                            let path = floberGroupName + `/${tempFileName}`; // Путь, куда картинка будет сохранена
+
+                            // Кидаю предупреждение, если такой файл уже есть в этой папке
+                            if (!fs.existsSync(path)) {
+                                fileName = tempFileName;
+                                break;
+                            }
+
+                            if (bool_isinfoShow) console.log("⚠️ Файл с именем " + tempFileName + " уже существует в папке " + floberGroupName);
+                            addCount++;
+                        } while (true);
+
+                        let path = floberGroupName + `/${fileName}`;
+
+                        // Сохраняю это изображение в папке 
+                        fs.writeFileSync(path, buffer);
+
+                        console.log("✅ Файл с именем " + fileName + " сохранён в папке " + floberGroupName);
+
+                        // Получаю timestamp из postDateTime
+                        let timestamp = moment(postDateTime, 'YYYY.MM.DD HH⁚mm').valueOf();
+
+                        // Устанавливаю время создания файла
+                        fs.utimes(path, timestamp / 1000, timestamp / 1000, (err) => {
+                            if (err) throw err;
+                            if (bool_isinfoShow) console.log("⏰ Время создания файла " + fileName +
+                                " установлено на " + postDateTime);
+                        });
+
+                        counterWaitRequest--;
+                    } catch (err) {
+                        console.log(`⚠️ Не удалось загрузить изображение после 3 попыток: ${err.message}`);
+                        console.log(`   Пост №${globalCountPost}, дата: ${postDateTime}`);
+                        console.log(`   URL: ${photoUrl}`);
+                        counterWaitRequest--;
+                    }
+                }
+
+
+
+                /*///////////////////////////////////////////////////////
+                //                   Сохранение GIF                    //
+                ////////////////////////////////////////////////////// */
+
+                let bool_isDataPrint = false;
+
+                // Для всех gif, в полученном наборе:
+                for (let attachment of attachments) {
+                    if (attachment.doc) {
+                        if (bool_isDataPrint == false) {
+                            bool_isDataPrint = true;
+                            if (goodPostText != '') {
+                                // Если в посте есть текст, добавляем его в название к видео, после даты:
+                                fs.appendFileSync(txtFile_allGifLinks, '\n[' + postDateTime + '] ' + goodPostText + '\n\n');
+                            } else {
+                                fs.appendFileSync(txtFile_allGifLinks, '\n[' + postDateTime + ']\n\n');
+                            }
+                        }
+
+                        // Ссылка на файл:
+                        const attachmentUrl = attachment.doc.url;
+                        console.log("🕹️ attachmentUrl = " + attachmentUrl)
+
+                        // Тут нужно также сохранять все ссылки в текстовый документ, и скачать их позже
+
+                        // Добавляем строку с этим URL в .txt файл
+                        // А также дату и время поста
+
+                        let nameStr = attachmentUrl + '\n'
+
+                        fs.appendFileSync(txtFile_allGifLinks, nameStr);
+                    }
+                }
+
+
+
+
+
+                /*/////////////////////////////////////////////////////////
+                //                   Сохранение видео                    //
+                //////////////////////////////////////////////////////// */
+
+                // Получаем все видео вложения
+                const videos = attachments.filter(attachment => attachment.type === 'video');
+
+                if (videos != '') {
+                    if (goodPostText != '') {
+                        // Если в посте есть текст, добавляем его в название к видео, после даты:
+                        fs.appendFileSync(txtFile_allVideoLinks, '\n[' + postDateTime + '] ' + goodPostText + '\n');
+                    } else {
+                        fs.appendFileSync(txtFile_allVideoLinks, '\n[' + postDateTime + ']\n');
+                    }
+                }
+
+                // Для всех видео вложений, в полученном наборе:
+                videos.forEach(videoAttachment => {
+                    // Получаем URL видео
+                    const video = videoAttachment.video;
+
+                    // Собираем URL страницы ВКонтакте с видео
+                    const videoPageUrl = `https://vk.com/video${video.owner_id}_${video.id}`;
+
+                    console.log(videoPageUrl); // URL страницы ВКонтакте с видео
+
+                    // Добавляем строку с этим URL в .txt файл
+                    // А также дату и время поста
+
+                    let nameStr = videoPageUrl + '\n'
+
+                    fs.appendFileSync(txtFile_allVideoLinks, nameStr);
+                });
+
+
+
+                /*//////////////////////////////////////////////////////////
+                //                   Обработка опросов                    //
+                ///////////////////////////////////////////////////////// */
+
+                // Проверяем, есть ли в посте опрос
+                const polls = 'attachments' in item ? item.attachments.filter(attachment => attachment.type === 'poll') : [];
+
+                if (polls.length > 0) {
+                    bool_isWeGoingToPoll = true;
+                    counterWaitRequest++;
+
+                    console.log("")
+                    // Если опрос есть, выводим его заголовок 
+                    console.log("📊 Опрос: ", polls[0].poll.question);
+                    console.log("")
+                    let dOut3 = "🟣🟣🟣 Программа сохранения дошла до " + (offset + count) + " поста, в котором есть опрос"
+                    console.log(dOut3);
+                    // let txtFile_stopThisProgramm = nameFlMainSession + '/На каком посте остановились из группы ' + goodGroupName + '.txt';
+                    // fs.writeFileSync(txtFile_stopThisProgramm, dOut3);
+                    //process.exit();
+
+                    // Также сохраняю текстовый документ, с опросом
+
+                    let poolfileName = '[' + postDateTime + ']' + " Опрос⁚ " + sanitizeFilename2(polls[0].poll.question);
+                    let poolPath = floberGroupName + `/${poolfileName}.txt`;
+
+                    console.log("poolfileName = " + poolfileName + ", floberGroupName = " + floberGroupName)
+
+                    // Сохраняю этот текст в папке
+                    fs.writeFileSync(poolPath, polls[0].poll.question);
+                    console.log("📄 Текстовый файл с именем " + poolfileName + " сохранён в папке " + floberGroupName);
+
+                    // Получаю timestamp из postDateTime
+                    let timestamp = moment(postDateTime, 'YYYY.MM.DD HH⁚mm').valueOf();
+
+                    // Устанавливаю время создания файла
+                    fs.utimes(poolPath, timestamp / 1000, timestamp / 1000, (err) => {
+                        if (err) throw err;
+                        if (bool_isinfoShow) console.log("⏰ Время создания файла " + poolfileName +
+                            " установлено на " + postDateTime);
+                        counterWaitRequest--;
+                    });
+                }
+            });
