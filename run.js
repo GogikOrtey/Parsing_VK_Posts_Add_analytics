@@ -92,6 +92,49 @@ let bool_isinfoShow = false;            // Если = true, то в консол
 
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 // ---------- Запуск main.js с заданными параметрами ----------
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));

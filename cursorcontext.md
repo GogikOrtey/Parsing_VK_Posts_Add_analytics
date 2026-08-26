@@ -31,6 +31,7 @@ node run.js
 ```
 
 ## Связанные файлы
+- `main_parser_instruction.md` — инструкция по запуску и CLI-аргументам `main.js` / `run.js`
 - `video_downloader 2.js` — отдельная загрузка видео по ссылкам
 - `analityc.js` — аналитика
 - `Задачи.md` — бэклог
