@@ -1,3 +1,10 @@
+// Файл: main.js
+// Назначение: основная программа загрузки контента из постов ВКонтакте (фото, текст, GIF,
+// ссылки на видео). Параметры запуска принимает из CLI-аргументов (или значения по умолчанию);
+// ACCESS_TOKEN берётся из .env. Обычно запускается через run.js, можно и напрямую:
+//   node main.js --groupId=creativityal --startCount=20 --allCount=-1
+// Связан с: run.js (настройки и запуск), .env (ACCESS_TOKEN), папка main/ (сессии выгрузки).
+
 import 'dotenv/config';
 import fetch from 'node-fetch';
 import fs from 'fs';
@@ -10,114 +17,70 @@ import { spawn } from 'child_process';
 import path from 'path';
 
 
-// ---------- Описание программы ----------
+// ---------- CLI: разбор аргументов запуска ----------
 
-// Эта программа скачает и сохранит: Картинки, Подписи к посту и GIF
-// Также, она получит ссылки на все видео из постов, и сохранит их в текстовый файл, с датами постов
+// Разбирает process.argv в объект ключ→значение.
+// Поддерживает --key=value и --key value. Используется при старте main.js.
+function parseCliArgs(argv = process.argv) {
+    const args = {};
 
+    for (let i = 2; i < argv.length; i++) {
+        const token = argv[i];
+        if (!token.startsWith('--')) continue;
 
+        const body = token.slice(2);
+        const eq = body.indexOf('=');
 
+        if (eq !== -1) {
+            args[body.slice(0, eq)] = body.slice(eq + 1);
+            continue;
+        }
 
-// ---------- Основные переменные для настройки ----------
+        const next = argv[i + 1];
+        if (next !== undefined && !next.startsWith('--')) {
+            args[body] = next;
+            i++;
+        } else {
+            args[body] = 'true';
+        }
+    }
+
+    return args;
+}
+
+// Преобразует строковый CLI-флаг в boolean; при пустом/неизвестном — defaultValue.
+// Используется при распаковке bool_* параметров из аргументов.
+function parseCliBool(value, defaultValue) {
+    if (value === undefined || value === null || value === '') return defaultValue;
+    const s = String(value).trim().toLowerCase();
+    if (['1', 'true', 'yes', 'y', 'on'].includes(s)) return true;
+    if (['0', 'false', 'no', 'n', 'off'].includes(s)) return false;
+    return defaultValue;
+}
+
+// Преобразует CLI-значение в целое число; при пустом/нечисле — defaultValue.
+// Используется при распаковке startOffset / startCount / allCount.
+function parseCliInt(value, defaultValue) {
+    if (value === undefined || value === null || value === '') return defaultValue;
+    const n = Number.parseInt(String(value), 10);
+    return Number.isFinite(n) ? n : defaultValue;
+}
+
+const cli = parseCliArgs();
 
 // Ключ доступа к API (задаётся в файле .env)
 const accessToken = process.env.ACCESS_TOKEN ?? '';
 
-// ID, короткое имя или ссылка на группу ВКонтакте
-// Примеры: '224924750', 'creativityal', 'https://vk.com/creativityal', 'https://vk.ru/snowarts'
-// + // const groupId = '224924750';        // Мемы для программистов
-// + // const groupId = '185062110';        // Best Photo Live!
-// + // const groupId = '169371425';        // Жизненные ценности
-// + // const groupId = '168229061';        // Очень тупые картинки (старая группа)
-// + // const groupId = '206265163';        // Творческое вдохновение
-// + // const groupId = '169682998';        // Секрет
-// + // const groupId = '212162826';        // Пошлые картиночки
-// + // const groupId = '216386129';        // Милые картинки
-// + // const groupId = '222482163';        // Смешные картинки из интернета
-// + // const groupId = '184506157';        // Улётные картинки #2
-// + // const groupId = '186150422';        // Love is beautiful
-
-
-// const groupId = '234264825';
-// const groupId = 'madein_abyss';
-// const groupId = '213046214';
-// const groupId = '236598787';
-// let groupId = 'creativityal';
-// let groupId = 'b1ackrockshooter';
-// let groupId = 'iichan228';
-// let groupId = 'snowarts';
-// let groupId = 'https://vk.ru/snowarts'; 
-let groupId = 'https://vk.ru/club238701965'; 
-
-
-
-// https://vk.com/public + этот номер, без пробела
-
-
-
-/*////////////////////////////////////
-//          Count и Offset          //
-////////////////////////////////////*/
-
-
-let startOffset = 0     // = 0, если мы хотим начать с верха сообщества    
-let startCount = 20     // Лучшее значение - это 10 или 20. Макисмальное = 100
-// let allCount = -1      // Ограничитель, сколько мы обработаем постов // = -1, если без ограничения
-// let allCount = 1      // Ограничитель, сколько мы обработаем постов // = -1, если без ограничения
-let allCount = 500      // Ограничитель, сколько мы обработаем постов // = -1, если без ограничения
-
-// // Нижняя граница по дате/времени публикации: сохраняем посты от верха стены вниз до этой точки (включительно)
-// // Время (необязательно): "02:43:50" | "02⁚43⁚50" | "02:43" | "2h 43m". // Если время не указано — считаем 00:00:00 указанной даты.
-let collection_time_before_date = ""
-let collection_time_before_time = ""
-// let collection_time_before_date = "2026.07.02"   // например "2026.07.02" // Пустая дата = без ограничения по дате
-// let collection_time_before_time = "02⁚43⁚50"   // например "02:43:50" или "2h 43m"
-
-// // count - это количество постов, которые вернёт нам сервер max=100
-// // offset - это сдвиг, относительно которого нам сервер отправит посты
-// // offset сдвигается на count, после каждого автоматического запроса
-
-let bool_isStopedBeforePool = false;     // Мы останавливаем программу, после того как нам встретился опрос?
-
-
-
-// Пример значений:
-//
-// let startCount = 10
-// let startOffset = 0
-// let allCount = 20  
-
-
-
-
-// ---------- Дополнительные настройки ----------
-
-// Путь по умолчанию, где создаются папки Session, в которые будет сохраняться весь контент
-// (Относительно этого исполняемого файла main.js)
-
-let mainPath = 'main/';
-
-let bool_isinfoShow = false;            // Если = true, то в консоль будут выводится дополнительные информационные сообщения
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+// Параметры запуска: CLI перекрывает значения по умолчанию
+let groupId = cli.groupId ?? '';
+let startOffset = parseCliInt(cli.startOffset, 0);
+let startCount = parseCliInt(cli.startCount, 20);
+let allCount = parseCliInt(cli.allCount, -1);
+let collection_time_before_date = cli.collection_time_before_date ?? '';
+let collection_time_before_time = cli.collection_time_before_time ?? '';
+let bool_isStopedBeforePool = parseCliBool(cli.bool_isStopedBeforePool, false);
+let mainPath = cli.mainPath ?? 'main/';
+let bool_isinfoShow = parseCliBool(cli.bool_isinfoShow, false);
 
 
 // ------------------------------------------------------------------------------------------
@@ -139,6 +102,15 @@ console.log("")
 if (accessToken == '') {
     console.log("В программе не указан Ключ доступа к API. Его нужно указать в файле .env (переменная ACCESS_TOKEN)")
     console.log("Как получить Ключ доступа к API ВКонтакте - вы можете легко узнать в интернете. Это не займёт больше 2х минут")
+    console.log('');
+    console.log('🔴 Error! Программа остановлена с ошибкой');
+    process.exit();
+}
+
+if (groupId == '') {
+    console.log("Не указан groupId. Задайте его в run.js или передайте аргументом:")
+    console.log("  node main.js --groupId=creativityal")
+    console.log("  node run.js")
     console.log('');
     console.log('🔴 Error! Программа остановлена с ошибкой');
     process.exit();
