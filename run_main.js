@@ -37,7 +37,10 @@ import { fileURLToPath } from 'url';
 // let groupId = 'https://vk.ru/snowarts';
 // let groupId = 'https://vk.ru/club238701965';
 // let groupId = 'https://vk.ru/club237133417';
-let groupId = 'https://vk.ru/nekomi_waifu';
+// let groupId = 'https://vk.ru/nekomi_waifu';
+// let groupId = 'https://vk.ru/kipfena24296416';
+let groupId = 'https://vk.ru/podvalhyundai';
+
 
 
 

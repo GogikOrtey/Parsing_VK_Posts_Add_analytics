@@ -25,7 +25,8 @@ let DOWNLOAD_RANDOM_IMAGE = false;
 // Примеры: '236598787', 'creativityal', 'https://vk.com/creativityal'
 // const groupId = '213046214';
 // let groupId = 'creativityal';
-let groupId = 'https://vk.com/b1ackrockshooter';
+// let groupId = 'https://vk.com/b1ackrockshooter';
+let groupId = 'https://vk.ru/podvalhyundai';
 
 
 // ---------- Параметры выборки и загрузки ----------
@@ -34,6 +35,59 @@ let SAMPLE_POSTS_COUNT = 20;           // Сколько первых посто
 let SERVICE_BYTES_PER_POST = 50;       // Оценка служебного веса на пост (байт) при экстраполяции
 let DOWNLOAD_BATCH_SIZE = 5;           // Параллельных загрузок картинок в одном пакете
 let RANDOM_IMAGE_MAX_ATTEMPTS = 15;    // Попыток найти пост с картинкой в режиме случайной загрузки
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 // ---------- Запуск analityc.js с заданными параметрами ----------
