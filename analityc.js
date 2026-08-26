@@ -1,3 +1,10 @@
+// Файл: analityc.js
+// Назначение: аналитика объёма контента группы ВКонтакте и/или скачивание случайной картинки.
+// Параметры запуска принимает из CLI-аргументов (или значения по умолчанию);
+// ACCESS_TOKEN берётся из .env. Обычно запускается через run_analityc.js, можно и напрямую:
+//   node analityc.js --groupId=creativityal --isAnalitycs=true
+// Связан с: run_analityc.js (настройки и запуск), .env (ACCESS_TOKEN), папка temp/ (случайные картинки).
+
 import 'dotenv/config';
 import fetch from 'node-fetch';
 import https from 'https';
@@ -6,42 +13,73 @@ import path from 'path';
 import { exec } from 'child_process';
 import { fileURLToPath } from 'url';
 
-// ---------- Режим аналитики ----------
 
-export const isAnalitycs = true;
-// export const isAnalitycs = false;
+// ---------- CLI: разбор аргументов запуска ----------
 
-// Скачивание случайного поста
-// const DOWNLOAD_RANDOM_IMAGE = true;
-const DOWNLOAD_RANDOM_IMAGE = false;
+// Разбирает process.argv в объект ключ→значение.
+// Поддерживает --key=value и --key value. Используется при старте analityc.js.
+function parseCliArgs(argv = process.argv) {
+    const args = {};
 
-// ---------- Настройки (как в main.js) ----------
+    for (let i = 2; i < argv.length; i++) {
+        const token = argv[i];
+        if (!token.startsWith('--')) continue;
 
+        const body = token.slice(2);
+        const eq = body.indexOf('=');
+
+        if (eq !== -1) {
+            args[body.slice(0, eq)] = body.slice(eq + 1);
+            continue;
+        }
+
+        const next = argv[i + 1];
+        if (next !== undefined && !next.startsWith('--')) {
+            args[body] = next;
+            i++;
+        } else {
+            args[body] = 'true';
+        }
+    }
+
+    return args;
+}
+
+// Преобразует строковый CLI-флаг в boolean; при пустом/неизвестном — defaultValue.
+// Используется при распаковке isAnalitycs / DOWNLOAD_RANDOM_IMAGE из аргументов.
+function parseCliBool(value, defaultValue) {
+    if (value === undefined || value === null || value === '') return defaultValue;
+    const s = String(value).trim().toLowerCase();
+    if (['1', 'true', 'yes', 'y', 'on'].includes(s)) return true;
+    if (['0', 'false', 'no', 'n', 'off'].includes(s)) return false;
+    return defaultValue;
+}
+
+// Преобразует CLI-значение в целое число; при пустом/нечисле — defaultValue.
+// Используется при распаковке SAMPLE_POSTS_COUNT и других числовых параметров.
+function parseCliInt(value, defaultValue) {
+    if (value === undefined || value === null || value === '') return defaultValue;
+    const n = Number.parseInt(String(value), 10);
+    return Number.isFinite(n) ? n : defaultValue;
+}
+
+const cli = parseCliArgs();
+
+// Ключ доступа к API (задаётся в файле .env)
 const accessToken = process.env.ACCESS_TOKEN ?? '';
-// ID, короткое имя или ссылка на группу ВКонтакте
-// Примеры: '236598787', 'creativityal', 'https://vk.com/creativityal'
-// const groupId = '213046214';
-// let groupId = 'creativityal';
-let groupId = 'https://vk.com/b1ackrockshooter';
 
-
-
-
-
-
-
-
-
-
-
-const SAMPLE_POSTS_COUNT = 20;
-const SERVICE_BYTES_PER_POST = 50;
-const DOWNLOAD_BATCH_SIZE = 5;
+// Параметры запуска: CLI перекрывает значения по умолчанию
+export let isAnalitycs = parseCliBool(cli.isAnalitycs, true);
+let DOWNLOAD_RANDOM_IMAGE = parseCliBool(cli.DOWNLOAD_RANDOM_IMAGE, false);
+let groupId = cli.groupId ?? '';
+let SAMPLE_POSTS_COUNT = parseCliInt(cli.SAMPLE_POSTS_COUNT, 20);
+let SERVICE_BYTES_PER_POST = parseCliInt(cli.SERVICE_BYTES_PER_POST, 50);
+let DOWNLOAD_BATCH_SIZE = parseCliInt(cli.DOWNLOAD_BATCH_SIZE, 5);
 const API_VERSION = '5.130';
-
-
-const RANDOM_IMAGE_MAX_ATTEMPTS = 15;
-const TEMP_DIR = path.join(path.dirname(fileURLToPath(import.meta.url)), 'temp');
+let RANDOM_IMAGE_MAX_ATTEMPTS = parseCliInt(cli.RANDOM_IMAGE_MAX_ATTEMPTS, 15);
+const TEMP_DIR = cli.tempDir
+    ? path.resolve(cli.tempDir)
+    : path.join(path.dirname(fileURLToPath(import.meta.url)), 'temp');
 
 // ---------- Результаты аналитики ----------
 
@@ -415,6 +453,13 @@ if (isAnalitycs || DOWNLOAD_RANDOM_IMAGE) {
     (async () => {
         if (!accessToken) {
             console.log('🔴 Error! Не указан ACCESS_TOKEN в файле .env');
+            process.exit(1);
+        }
+
+        if (!groupId) {
+            console.log('🔴 Error! Не указан groupId. Задайте его в run_analityc.js или передайте аргументом:');
+            console.log('  node analityc.js --groupId=creativityal');
+            console.log('  node run_analityc.js');
             process.exit(1);
         }
 
