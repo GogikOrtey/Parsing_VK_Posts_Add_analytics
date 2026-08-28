@@ -525,6 +525,16 @@ v=5.130`);
         process.exit();
     }
 
+    // Общее число постов на стене — из response.count (не путать с item.id)
+    if (bool_isShowCountOfPosts == false && offset == 0) {
+        allCountPostOfThisGroup = json.response.count ?? 0;
+        console.log("Общее количество постов в группе: " + allCountPostOfThisGroup);
+        console.log("");
+        bool_isShowCountOfPosts = true;
+    } else if (bool_isShowCountOfPosts == false) {
+        bool_isShowCountOfPosts = true;
+    }
+
     // Обрабатываем каждый пост
     json.response.items.forEach(async item => {
                 // Обрабатываем каждый пост асинхронно (одновременно)
@@ -565,20 +575,6 @@ v=5.130`);
 
                 // Выводим всю информацию о посте
                 //console.log("📚 Информация о посте: ", item);
-
-                // Выводим общее количество постов в группе:
-                if (bool_isShowCountOfPosts == false) {
-                    if (offset == 0) {
-                        // Ищем id поста:
-                        let idPost = 'id' in item ? item.id : '';
-                        console.log("Общее количество постов в группе: " + idPost)
-                        allCountPostOfThisGroup = idPost;
-                        console.log("")
-                        bool_isShowCountOfPosts = true;
-                    } else {
-                        bool_isShowCountOfPosts = true;
-                    }
-                }
 
                 /*////////////////////////////////////
                 //      Обработка фото в посте      //
