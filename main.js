@@ -1,8 +1,8 @@
 // Файл: main.js
 // Назначение: основная программа выгрузки постов ВКонтакте. Получает стену пакетами через
-// wall.get, последовательно обрабатывает посты, полностью ожидает запись текста/фото/опросов
-// и сохраняет упорядоченные ссылки на GIF/video. Настройки приходят из CLI (обычно от
-// run_main.js), ACCESS_TOKEN — из .env; результаты складываются в Session-папку.
+// wall.get, ограниченно-параллельно сохраняет посты каждого батча, полностью ожидает запись
+// текста/фото/опросов и сохраняет ссылки на GIF/video в порядке стены. Настройки приходят
+// из CLI (обычно от run_main.js), ACCESS_TOKEN — из .env; результаты — в Session-папке.
 
 import 'dotenv/config';
 import fs from 'fs/promises';
@@ -19,6 +19,7 @@ import {
     isEndOfWall,
     isGifDocument,
     isPostBelowCutoff,
+    mapWithConcurrency,
     normalizePost,
     parseCliArgs,
     parseCliBool,
@@ -33,6 +34,7 @@ import { callVkApi, downloadImageBuffer } from './network.js';
 
 const API_VERSION = '5.130';
 const FILE_TEXT_LIMIT = 80;
+const POST_PROCESSING_CONCURRENCY = 6;
 
 // Формирует и проверяет конфигурацию запуска из CLI.
 // Используется main() до любых сетевых и файловых операций.
@@ -193,9 +195,9 @@ async function savePostPhotos(photos, post, context, prefix, shortText, globalNu
     }
 }
 
-// Добавляет GIF и video текущего поста в упорядоченные буферы ссылок.
-// Используется processPost после нормализации всей copy_history.
-function collectMediaLinks(post, shortText, context, prefix) {
+// Формирует секции GIF/video и их счётчики без изменения общих буферов сессии.
+// Используется processPost; main() объединяет результаты параллельных задач в порядке стены.
+function collectMediaLinks(post, shortText, prefix) {
     const heading = shortText ? `${prefix} ${shortText}` : prefix;
     const gifUrls = post.attachments
         .filter(isGifDocument)
@@ -206,20 +208,16 @@ function collectMediaLinks(post, shortText, context, prefix) {
         .map((attachment) => buildVideoPageUrl(attachment.video))
         .filter(Boolean);
 
-    if (gifUrls.length > 0) {
-        context.gifSections.push(`${heading}\n${gifUrls.join('\n')}`);
-        context.stats.gifs += gifUrls.length;
-        context.batchStats.gifs += gifUrls.length;
-    }
-    if (videoUrls.length > 0) {
-        context.videoSections.push(`${heading}\n${videoUrls.join('\n')}`);
-        context.stats.videos += videoUrls.length;
-        context.batchStats.videos += videoUrls.length;
-    }
+    return {
+        gifSection: gifUrls.length > 0 ? `${heading}\n${gifUrls.join('\n')}` : null,
+        videoSection: videoUrls.length > 0 ? `${heading}\n${videoUrls.join('\n')}` : null,
+        gifCount: gifUrls.length,
+        videoCount: videoUrls.length,
+    };
 }
 
 // Сохраняет каждый найденный опрос вместе с вариантами и доступными итогами.
-// Используется processPost; возвращает число опросов для логики остановки.
+// Используется processPost после предварительного определения границ текущего батча.
 async function savePolls(polls, post, context, prefix) {
     for (let index = 0; index < polls.length; index++) {
         const poll = polls[index].poll;
@@ -232,11 +230,10 @@ async function savePolls(polls, post, context, prefix) {
         context.batchStats.texts++;
         if (context.verbose) console.log(`Опрос сохранён: ${path.basename(filePath)}`);
     }
-    return polls.length;
 }
 
-// Полностью обрабатывает один нормализованный пост и возвращает факт наличия опроса.
-// Основной цикл вызывает функцию последовательно, сохраняя порядок стены.
+// Полностью сохраняет один нормализованный пост и возвращает локальный результат для слияния.
+// Пул основного цикла вызывает функцию параллельно; общие списки ссылок здесь не изменяются.
 async function processPost(post, context, globalNumber) {
     const dateLabel = moment.unix(post.date).format('YYYY.MM.DD HH⁚mm⁚ss');
     const prefix = buildPostPrefix(post, dateLabel);
@@ -245,16 +242,27 @@ async function processPost(post, context, globalNumber) {
 
     context.stats.posts++;
     context.batchStats.posts++;
-    if (!context.batchStats.firstDate) context.batchStats.firstDate = dateLabel;
-    context.batchStats.lastDate = dateLabel;
 
     const shortText = await savePostText(post, context, prefix);
     const photos = post.attachments.filter((attachment) => attachment?.type === 'photo');
     await savePostPhotos(photos, post, context, prefix, shortText, globalNumber);
-    collectMediaLinks(post, shortText, context, prefix);
+    const mediaLinks = collectMediaLinks(post, shortText, prefix);
     const polls = post.attachments.filter((attachment) => attachment?.type === 'poll' && attachment.poll);
     await savePolls(polls, post, context, prefix);
-    return { hasPoll: polls.length > 0 };
+    return mediaLinks;
+}
+
+// Добавляет результаты параллельно обработанного батча в общую статистику и буферы ссылок.
+// Вызывается main() после завершения пула; порядок массива совпадает с порядком постов стены.
+function mergeBatchResults(results, context) {
+    for (const result of results) {
+        if (result.gifSection) context.gifSections.push(result.gifSection);
+        if (result.videoSection) context.videoSections.push(result.videoSection);
+        context.stats.gifs += result.gifCount;
+        context.batchStats.gifs += result.gifCount;
+        context.stats.videos += result.videoCount;
+        context.batchStats.videos += result.videoCount;
+    }
 }
 
 // Атомарно обновляет файлы ссылок из накопленных секций, сохраняя порядок постов.
@@ -419,6 +427,7 @@ async function main() {
         totalCount = response.count;
         context.batchStats = createBatchStats(offset, response.items.length);
         const batchOffset = offset;
+        const selectedPosts = [];
         let inspectedInBatch = 0;
 
         for (const rawItem of response.items) {
@@ -437,21 +446,34 @@ async function main() {
                 break;
             }
 
-            const result = await processPost(post, context, itemOffset + 1);
-            offset = itemOffset + 1;
+            selectedPosts.push({ post, globalNumber: itemOffset + 1 });
+            const hasPoll = post.attachments.some(
+                (attachment) => attachment?.type === 'poll' && attachment.poll,
+            );
             const postStopReason = getStopReasonAfterPost({
-                processedCount: context.stats.posts,
+                processedCount: context.stats.posts + selectedPosts.length,
                 allCount: config.allCount,
-                hasPoll: result.hasPoll,
+                hasPoll,
                 stopAfterPoll: config.stopAfterPoll,
             });
             if (postStopReason) {
                 stopReason = postStopReason;
+                offset = itemOffset + 1;
                 shouldStop = true;
                 break;
             }
         }
 
+        if (selectedPosts.length > 0) {
+            context.batchStats.firstDate = moment.unix(selectedPosts[0].post.date).format('YYYY.MM.DD HH⁚mm⁚ss');
+            context.batchStats.lastDate = moment.unix(selectedPosts.at(-1).post.date).format('YYYY.MM.DD HH⁚mm⁚ss');
+        }
+        const batchResults = await mapWithConcurrency(
+            selectedPosts,
+            POST_PROCESSING_CONCURRENCY,
+            ({ post, globalNumber }) => processPost(post, context, globalNumber),
+        );
+        mergeBatchResults(batchResults, context);
         await flushLinkFiles(context);
         logBatchSummary(context.batchStats, totalCount, context.stats.posts);
         if (shouldStop) break;

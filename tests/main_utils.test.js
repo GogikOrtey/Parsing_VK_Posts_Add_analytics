@@ -1,6 +1,6 @@
 // Файл: tests/main_utils.test.js
-// Назначение: модульные тесты чистой логики main.js — CLI, даты, имена, вложения,
-// границы батчей, allCount и остановка на опросе. Запускается командой npm test.
+// Назначение: модульные тесты логики main.js — CLI, даты, имена, вложения, границы
+// батчей, ограниченный параллелизм, allCount и остановка на опросе. Запуск: npm test.
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -12,6 +12,7 @@ import {
     isEndOfWall,
     isGifDocument,
     isPostBelowCutoff,
+    mapWithConcurrency,
     normalizePost,
     parseCliArgs,
     parseCliBool,
@@ -109,6 +110,25 @@ test('allCount уменьшает последний батч и poll остан
         hasPoll: false,
         stopAfterPoll: false,
     }), 'достигнут лимит allCount');
+});
+
+test('пул ограничивает параллелизм и возвращает результаты в исходном порядке', async () => {
+    let activeCount = 0;
+    let maximumActiveCount = 0;
+    const completionOrder = [];
+
+    const results = await mapWithConcurrency([30, 5, 20, 5], 2, async (delayMs, index) => {
+        activeCount++;
+        maximumActiveCount = Math.max(maximumActiveCount, activeCount);
+        await new Promise((resolve) => setTimeout(resolve, delayMs));
+        completionOrder.push(index);
+        activeCount--;
+        return `result-${index}`;
+    });
+
+    assert.equal(maximumActiveCount, 2);
+    assert.notDeepEqual(completionOrder, [0, 1, 2, 3]);
+    assert.deepEqual(results, ['result-0', 'result-1', 'result-2', 'result-3']);
 });
 
 test('имена безопасны для Windows, а ключи одинаковых текстов различаются по post id', () => {

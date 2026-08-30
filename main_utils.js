@@ -1,11 +1,42 @@
 // Файл: main_utils.js
-// Назначение: чистые функции парсера VK для разбора CLI, проверки настроек, нормализации
-// постов, классификации вложений и определения конца стены. Не выполняет сеть и запись файлов,
-// поэтому используется main.js и напрямую тестируется в tests/main_utils.test.js.
+// Назначение: переиспользуемые функции парсера VK для разбора CLI, проверки настроек,
+// нормализации постов, классификации вложений, определения конца стены и ограниченного
+// параллелизма. Не выполняет сеть и запись файлов; используется main.js и тестируется отдельно.
 
 import path from 'path';
 
 const WINDOWS_RESERVED_NAMES = /^(con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\..*)?$/i;
+
+// Применяет асинхронный обработчик к элементам с заданным числом работников и сохраняет порядок результатов.
+// Используется main.js для параллельного сохранения постов одного батча без неограниченного числа операций.
+export async function mapWithConcurrency(items, concurrency, mapper) {
+    if (!Array.isArray(items)) throw new TypeError('items должен быть массивом');
+    if (!Number.isSafeInteger(concurrency) || concurrency < 1) {
+        throw new RangeError('concurrency должен быть положительным целым числом');
+    }
+    if (typeof mapper !== 'function') throw new TypeError('mapper должен быть функцией');
+    if (items.length === 0) return [];
+
+    const results = new Array(items.length);
+    let nextIndex = 0;
+
+    // Забирает следующий свободный индекс и обрабатывает элементы до опустошения очереди.
+    // Несколько экземпляров worker запускаются mapWithConcurrency как ограниченный пул.
+    async function worker() {
+        while (nextIndex < items.length) {
+            const currentIndex = nextIndex;
+            nextIndex++;
+            results[currentIndex] = await mapper(items[currentIndex], currentIndex);
+        }
+    }
+
+    const workerCount = Math.min(concurrency, items.length);
+    const workers = Array.from({ length: workerCount }, () => worker());
+    const settledWorkers = await Promise.allSettled(workers);
+    const failedWorker = settledWorkers.find((result) => result.status === 'rejected');
+    if (failedWorker) throw failedWorker.reason;
+    return results;
+}
 
 // Разбирает process.argv в объект параметров; поддерживает --key=value и --key value.
 // Используется main.js при формировании конфигурации запуска.
