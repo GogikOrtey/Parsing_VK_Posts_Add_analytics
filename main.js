@@ -1,9 +1,11 @@
 // Файл: main.js
 // Назначение: основная программа загрузки контента из постов ВКонтакте (фото, текст, GIF,
 // ссылки на видео). Параметры запуска принимает из CLI-аргументов (или значения по умолчанию);
-// ACCESS_TOKEN берётся из .env. Обычно запускается через run.js, можно и напрямую:
+// ACCESS_TOKEN берётся из .env. Обычно запускается через run.js / run_main.js, можно и напрямую:
 //   node main.js --groupId=creativityal --startCount=20 --allCount=-1
-// Связан с: run.js (настройки и запуск), .env (ACCESS_TOKEN), папка main/ (сессии выгрузки).
+// Логи: по умолчанию кратко (1 строка на пост + итог батча + сводка сессии); детали файлов —
+// при bool_isinfoShow=true. Финиш: PARSER_EXIT ok (ждать exit процесса, не фразы в логе).
+// Связан с: run_main.js (настройки и запуск), .env (ACCESS_TOKEN), папка main/ (сессии выгрузки).
 
 import 'dotenv/config';
 import fetch from 'node-fetch';
@@ -337,8 +339,99 @@ let timeDifference = 0;                 // Разница между после�
 let int_lastNumberOfPost = -1;          // № последнего поста
 let allCountPostOfThisGroup = 0;        // Общее количество постов в группе
 let lastRequestCount = startCount;      // Сколько постов запросили в последнем wall.get
+let stopReason = '';                    // Краткая причина завершения для сводки в EndOfProgramm
+let lastWaitLogAt = 0;                  // Троттлинг редкого «ждём…» при bool_isinfoShow
 
 const oldStartOffset = startOffset;     // Значение оффсета, которое не меняется
+
+// Сводка за всю сессию (для финального лога)
+let sessionStats = {
+    posts: 0,
+    photos: 0,
+    texts: 0,
+    videos: 0,
+    gifs: 0,
+    photoErrors: 0,
+};
+
+// Сводка текущего батча wall.get; сбрасывается в resetBatchStats
+let batchStats = null;
+
+// Сбрасывает счётчики батча перед очередным MainRequest.
+// Используется в MainRequest; читается в waitForCondition для строки прогресса.
+function resetBatchStats(offset, count) {
+    batchStats = {
+        offset,
+        count,
+        posts: 0,
+        photos: 0,
+        texts: 0,
+        videos: 0,
+        gifs: 0,
+        photoErrors: 0,
+        firstDate: null,
+        lastDate: null,
+    };
+}
+
+// Считает типы вложений и выбирает главную иконку (video > gif/doc > photo > poll > иное).
+// Используется в MainRequest для одной строки лога на пост.
+function summarizeAttachments(attachments) {
+    const counts = {};
+    for (const a of attachments) {
+        const t = a.type || 'other';
+        counts[t] = (counts[t] || 0) + 1;
+    }
+
+    let icon = '⚠️🟪';
+    if (counts.video) icon = '📽️';
+    else if (counts.doc) icon = '🕹️';
+    else if (counts.photo) icon = '📸';
+    else if (counts.poll) icon = '📊';
+
+    const parts = Object.entries(counts).map(([t, n]) => `${t}×${n}`);
+    return { icon, summary: parts.join(' ') || 'empty', counts };
+}
+
+// Печатает факт сохранения файла только в подробном режиме (имя без длинного пути Session/…).
+// kind: 'photo' | 'text'. Используется при сохранении jpg/txt.
+function logSavedFile(kind, fileName) {
+    if (!bool_isinfoShow) return;
+    const mark = kind === 'photo' ? '✅' : '📄';
+    console.log(`${mark} ${fileName}`);
+}
+
+// Печатает итог батча одной строкой (offset, № постов, даты, счётчики, прогресс по стене).
+// Вызывается из waitForCondition после завершения загрузок батча.
+function logBatchSummary() {
+    if (!batchStats || batchStats.posts === 0) {
+        console.log(`Батч offset=${batchStats ? batchStats.offset : '?'} | постов в батче: 0`);
+        return;
+    }
+
+    const fromPost = batchStats.offset + 1;
+    const toPost = batchStats.offset + batchStats.posts;
+    const datePart = (batchStats.firstDate && batchStats.lastDate)
+        ? ` | даты ${batchStats.firstDate} → ${batchStats.lastDate}`
+        : '';
+
+    const parts = [];
+    if (batchStats.photos) parts.push(`фото ${batchStats.photos}`);
+    if (batchStats.texts) parts.push(`текст ${batchStats.texts}`);
+    if (batchStats.videos) parts.push(`video ${batchStats.videos}`);
+    if (batchStats.gifs) parts.push(`gif ${batchStats.gifs}`);
+    if (batchStats.photoErrors) parts.push(`ошибок ${batchStats.photoErrors}`);
+    const countsPart = parts.length ? ` | ${parts.join(', ')}` : '';
+
+    const wallPart = allCountPostOfThisGroup > 0
+        ? ` | обработано ${int_lastNumberOfPost + 1} из ${allCountPostOfThisGroup}`
+        : ` | обработано ${int_lastNumberOfPost + 1}`;
+
+    console.log(
+        `Батч offset=${batchStats.offset}..${batchStats.offset + batchStats.count}` +
+        ` | посты ${fromPost}–${toPost}${datePart}${countsPart}${wallPart}`
+    );
+}
 
 // Сколько постов запросить в следующем wall.get с учётом startCount и остатка allCount.
 // Используется в waitForCondition перед вызовом MainRequest.
@@ -474,10 +567,10 @@ else {
 
 async function MainRequest(count, offset) {
 
+    resetBatchStats(offset, count);
+
     console.log("")
-    console.log("————————————— Посылаем запрос ——————————————")
-    console.log("offset = " + offset + ", count = " + count)
-    console.log("")
+    console.log(`—— Запрос offset=${offset}, count=${count} ——`)
 
     if (lastEventTime == 0) {
         lastEventTime = Date.now(); // Запоминаем время начала
@@ -485,7 +578,9 @@ async function MainRequest(count, offset) {
         let currentEventTime = Date.now(); // Запоминаем время окончания
         timeDifference = (currentEventTime - lastEventTime) / 1000; // Вычисляем разницу в секундах
 
-        console.log(`С последнего запроса прошло ${timeDifference.toFixed(2)} секунд`);
+        if (bool_isinfoShow) {
+            console.log(`С последнего запроса прошло ${timeDifference.toFixed(2)} секунд`);
+        }
 
         lastEventTime = currentEventTime; // Обновляем время последнего события
     }
@@ -564,9 +659,14 @@ v=5.130`);
                     return;
                 }
 
-                console.log("")
                 int_insCountOfThePost++;    // № обрабатываемого поста, начиная с 1
                 int_lastNumberOfPost++;
+                sessionStats.posts++;
+                if (batchStats) {
+                    batchStats.posts++;
+                    if (!batchStats.firstDate) batchStats.firstDate = postDateTime;
+                    batchStats.lastDate = postDateTime;
+                }
 
                 // После этого поста лимит allCount исчерпан — следующие в пачке не трогаем
                 if (allCount != -1 && (int_lastNumberOfPost + 1) >= allCount) {
@@ -599,9 +699,13 @@ v=5.130`);
                 let countImage = 1;
 
                 if (photos.length > 1) {
-                    console.log("📚 В посте несколько фотографий");
+                    if (bool_isinfoShow) console.log("📚 В посте несколько фотографий");
                     bool_ismultiplyPhotosInThePost = true;
                 }
+
+                const globalCountPost = offset + int_insCountOfThePost;
+                const attSummary = summarizeAttachments(attachments);
+                console.log(`${attSummary.icon} Пост №${globalCountPost}  ${postDateTime}  ${attSummary.summary}`);
 
 
 
@@ -657,10 +761,13 @@ v=5.130`);
                         let fileName = '[' + postDateTime + '] ' + goodPostText;
                         let path = floberGroupName + `/${fileName}.txt`;
 
+                        sessionStats.texts++;
+                        if (batchStats) batchStats.texts++;
+
                         // Сохраняю этот текст в папке
                         fs.writeFile(path, postText, err => {
                             if (err) throw err;
-                            console.log("📄 Текстовый файл с именем " + fileName + " сохранён в папке " + floberGroupName);
+                            logSavedFile('text', fileName + '.txt');
 
                             // Получаю timestamp из postDateTime
                             let timestamp = moment(postDateTime, 'YYYY.MM.DD HH⁚mm').valueOf();
@@ -681,19 +788,7 @@ v=5.130`);
                 //              Другое              //
                 ////////////////////////////////////*/
 
-
-                // Обрабатываем каждое вложение, и выводим его тип контента                                   
-                attachments.forEach(attachment => {
-                    // Выводим тип контента
-                    let occ = '⚠️🟪'
-                    if (attachment.type == "photo") occ = '📸';
-                    if (attachment.type == "video") occ = '📽️';
-                    if (attachment.type == "gif") occ = '🕹️';            // ? Проверить, работает ли это
-                    let globalCountPost = offset + int_insCountOfThePost;
-                    // console.log(`${occ} Пост №${int_insCountOfThePost} Тип контента:`, attachment.type); 
-                    console.log(`${occ} Пост №${globalCountPost} Тип контента:`, attachment.type);
-                });
-
+                // (тип вложений уже выведен одной строкой на пост выше)
 
 
                 /*////////////////////////////////////////////////////////
@@ -722,8 +817,6 @@ v=5.130`);
                     }
 
                     const photoUrl = maxResolutionUrl;
-
-                    const globalCountPost = offset + int_insCountOfThePost;
 
                     try {
                         // Запрашиваю картинки, по ссылкам, полученным из поста
@@ -762,7 +855,7 @@ v=5.130`);
                                 break;
                             }
 
-                            if (bool_isinfoShow) console.log("⚠️ Файл с именем " + tempFileName + " уже существует в папке " + floberGroupName);
+                            if (bool_isinfoShow) console.log("⚠️ Файл уже существует: " + tempFileName);
                             addCount++;
                         } while (true);
 
@@ -771,7 +864,9 @@ v=5.130`);
                         // Сохраняю это изображение в папке 
                         fs.writeFileSync(path, buffer);
 
-                        console.log("✅ Файл с именем " + fileName + " сохранён в папке " + floberGroupName);
+                        sessionStats.photos++;
+                        if (batchStats) batchStats.photos++;
+                        logSavedFile('photo', fileName);
 
                         // Получаю timestamp из postDateTime
                         let timestamp = moment(postDateTime, 'YYYY.MM.DD HH⁚mm').valueOf();
@@ -785,9 +880,11 @@ v=5.130`);
 
                         counterWaitRequest--;
                     } catch (err) {
+                        sessionStats.photoErrors++;
+                        if (batchStats) batchStats.photoErrors++;
                         console.log(`⚠️ Не удалось загрузить изображение после 3 попыток: ${err.message}`);
                         console.log(`   Пост №${globalCountPost}, дата: ${postDateTime}`);
-                        console.log(`   URL: ${photoUrl}`);
+                        if (bool_isinfoShow) console.log(`   URL: ${photoUrl}`);
                         counterWaitRequest--;
                     }
                 }
@@ -815,7 +912,10 @@ v=5.130`);
 
                         // Ссылка на файл:
                         const attachmentUrl = attachment.doc.url;
-                        console.log("🕹️ attachmentUrl = " + attachmentUrl)
+                        if (bool_isinfoShow) console.log("🕹️ attachmentUrl = " + attachmentUrl)
+
+                        sessionStats.gifs++;
+                        if (batchStats) batchStats.gifs++;
 
                         // Тут нужно также сохранять все ссылки в текстовый документ, и скачать их позже
 
@@ -839,12 +939,15 @@ v=5.130`);
                 // Получаем все видео вложения
                 const videos = attachments.filter(attachment => attachment.type === 'video');
 
-                if (videos != '') {
+                if (videos.length > 0) {
                     if (goodPostText != '') {
                         // Если в посте есть текст, добавляем его в название к видео, после даты:
                         fs.appendFileSync(txtFile_allVideoLinks, '\n[' + postDateTime + '] ' + goodPostText + '\n');
                     } else {
                         fs.appendFileSync(txtFile_allVideoLinks, '\n[' + postDateTime + ']\n');
+                    }
+                    if (bool_isinfoShow) {
+                        console.log(`📽️ video → файл ссылок (${videos.length})`);
                     }
                 }
 
@@ -856,7 +959,10 @@ v=5.130`);
                     // Собираем URL страницы ВКонтакте с видео
                     const videoPageUrl = `https://vk.com/video${video.owner_id}_${video.id}`;
 
-                    console.log(videoPageUrl); // URL страницы ВКонтакте с видео
+                    if (bool_isinfoShow) console.log(videoPageUrl);
+
+                    sessionStats.videos++;
+                    if (batchStats) batchStats.videos++;
 
                     // Добавляем строку с этим URL в .txt файл
                     // А также дату и время поста
@@ -882,23 +988,18 @@ v=5.130`);
                     console.log("")
                     // Если опрос есть, выводим его заголовок 
                     console.log("📊 Опрос: ", polls[0].poll.question);
-                    console.log("")
-                    let dOut3 = "🟣🟣🟣 Программа сохранения дошла до " + (offset + count) + " поста, в котором есть опрос"
-                    console.log(dOut3);
-                    // let txtFile_stopThisProgramm = nameFlMainSession + '/На каком посте остановились из группы ' + goodGroupName + '.txt';
-                    // fs.writeFileSync(txtFile_stopThisProgramm, dOut3);
-                    //process.exit();
+                    console.log("🟣 Программа дошла до поста с опросом (offset+count=" + (offset + count) + ")")
 
                     // Также сохраняю текстовый документ, с опросом
 
                     let poolfileName = '[' + postDateTime + ']' + " Опрос⁚ " + sanitizeFilename2(polls[0].poll.question);
                     let poolPath = floberGroupName + `/${poolfileName}.txt`;
 
-                    console.log("poolfileName = " + poolfileName + ", floberGroupName = " + floberGroupName)
-
                     // Сохраняю этот текст в папке
                     fs.writeFileSync(poolPath, polls[0].poll.question);
-                    console.log("📄 Текстовый файл с именем " + poolfileName + " сохранён в папке " + floberGroupName);
+                    sessionStats.texts++;
+                    if (batchStats) batchStats.texts++;
+                    logSavedFile('text', poolfileName + '.txt');
 
                     // Получаю timestamp из postDateTime
                     let timestamp = moment(postDateTime, 'YYYY.MM.DD HH⁚mm').valueOf();
@@ -913,8 +1014,6 @@ v=5.130`);
                 }
             });
 
-    console.log("")
-    console.log("🕑")
     waitForCondition();
 }
 
@@ -937,11 +1036,12 @@ async function waitForCondition() {
     while (counterWaitRequest > 0) {
         await new Promise(resolve => setTimeout(resolve, 500)); // Ждем 0.5 секунды
 
-        if (counterWaitRequest > 0) {
-            // console.log("counterWaitRequest > 0, ждем еще...");
-            // console.log("counterWaitRequest = " + counterWaitRequest);
-            console.log("Ещё не все файлы из набора загружены, ждём...")
-            //console.log("")
+        if (counterWaitRequest > 0 && bool_isinfoShow) {
+            const now = Date.now();
+            if (now - lastWaitLogAt >= 5000) {
+                console.log(`… ждём загрузки файлов (${counterWaitRequest})`);
+                lastWaitLogAt = now;
+            }
         }
     }
 
@@ -952,10 +1052,11 @@ async function waitForCondition() {
         MainRequest(lastRequestCount, startOffset);
     } else {
         console.log("")
-        console.log("Мы загрузили все посты с " + startOffset + " по " + (startOffset + lastRequestCount));
+        logBatchSummary();
 
         // Дошли до нижней границы даты/времени сбора — завершаем программу
         if (bool_isReachedCollectionDateLimit) {
+            stopReason = 'достигнута дата сбора';
             console.log("⏳ Достигнута указанная дата сбора, на этом программа завершается");
             await EndOfProgramm();
             process.exit();
@@ -963,6 +1064,7 @@ async function waitForCondition() {
 
         // Достигли лимита allCount по числу обработанных постов
         if (bool_isReachedAllCountLimit || (allCount != -1 && (int_lastNumberOfPost + 1) >= allCount)) {
+            stopReason = 'лимит allCount';
             console.log("Мы загрузили достаточно постов (" + (int_lastNumberOfPost + 1) + "), на этом программа завершается");
             await EndOfProgramm();
             process.exit();
@@ -977,16 +1079,16 @@ async function waitForCondition() {
                 console.log("С последнего запроса прошло " + timeDifference.toFixed(2) + " секунд")
                 console.log("🎈 Слишком частые ответы, скорее всего посты в сообществе закончились")
                 bool_isFinalPublicWall = true;
+                stopReason = 'конец стены сообщества';
                 await EndOfProgramm();
                 process.exit();
             }
-
-            console.log("Продолжаем загружать посты")
 
             startOffset += lastRequestCount; // Сдвигаем на реально запрошенное в прошлом запросе число постов
 
             lastRequestCount = getNextRequestCount();
             if (lastRequestCount <= 0) {
+                stopReason = 'лимит allCount';
                 console.log("Мы загрузили достаточно постов (" + (int_lastNumberOfPost + 1) + "), на этом программа завершается");
                 await EndOfProgramm();
                 process.exit();
@@ -994,6 +1096,7 @@ async function waitForCondition() {
 
             MainRequest(lastRequestCount, startOffset); // И запускаем запрос заново
         } else {
+            stopReason = 'опрос';
             await EndOfProgramm();
         }
     }
@@ -1043,6 +1146,18 @@ async function EndOfProgramm() {
     // Вызывается перед process.exit() при достижении даты, allCount, конца стены и т.п.
     console.log(``)
     console.log(`🟢🟢🟢 Программа успешно завершилась`)
+
+    const summaryParts = [
+        `постов ${sessionStats.posts}`,
+        `фото ${sessionStats.photos}`,
+        `текст ${sessionStats.texts}`,
+        `video ${sessionStats.videos}`,
+        `gif ${sessionStats.gifs}`,
+    ];
+    if (sessionStats.photoErrors) summaryParts.push(`ошибок фото ${sessionStats.photoErrors}`);
+    console.log(`Сводка: ${summaryParts.join(' | ')}`);
+    if (stopReason) console.log(`Причина остановки: ${stopReason}`);
+    console.log(`Папка сессии: ${nameFlMainSession}`);
     console.log(`PARSER_EXIT ok`)
 
     let dOut2;

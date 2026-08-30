@@ -71,5 +71,10 @@ node analityc.js --groupId=creativityal --isAnalitycs=true
 
 После успеха слать CursorNotify.
 
+## Логи парсера (`main.js`)
+- **Обычный режим** (`bool_isinfoShow=false`): старт, 1 строка на пост (`иконка № дата типы`), 1 строка итога батча (offset, даты, счётчики, прогресс по стене), ошибки, финальная сводка сессии + путь Session + `PARSER_EXIT ok`.
+- **Подробный** (`bool_isinfoShow=true`): имена сохранённых файлов, URL video/gif, редкий «ждём загрузки», интервал между запросами.
+- Не ждать завершения по русским фразам в логе — см. раздел выше.
+
 ## Стек
 Node.js (ES modules), `node-fetch`, `moment`, `sharp`, `axios`, `dotenv`, Puppeteer (для видео-даунлоадера).
