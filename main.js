@@ -1,8 +1,9 @@
 // Файл: main.js
 // Назначение: основная программа выгрузки постов ВКонтакте. Получает стену пакетами через
 // wall.get, ограниченно-параллельно сохраняет посты каждого батча, полностью ожидает запись
-// текста/фото/опросов и сохраняет ссылки на GIF/video в порядке стены. Настройки приходят
-// из CLI (обычно от run_main.js), ACCESS_TOKEN — из .env; результаты — в Session-папке.
+// текста/фото/опросов и сохраняет ссылки на GIF/video в порядке стены. В Session также пишет
+// текстовый отчёт о сборе (параметры старта, итоги батчей, финальная сводка). Настройки
+// приходят из CLI (обычно от run_main.js), ACCESS_TOKEN — из .env.
 
 import 'dotenv/config';
 import fs from 'fs/promises';
@@ -276,9 +277,9 @@ async function flushLinkFiles(context) {
     ]);
 }
 
-// Печатает статистику полностью завершённого батча.
+// Собирает одну строку итога батча для консоли и файла отчёта о сборе.
 // Используется основным циклом только после ожидания всех операций записи.
-function logBatchSummary(batchStats, totalCount, processedTotal) {
+function formatBatchSummary(batchStats, totalCount, processedTotal) {
     const parts = [
         `постов ${batchStats.posts}`,
         `фото ${batchStats.photos}`,
@@ -288,10 +289,18 @@ function logBatchSummary(batchStats, totalCount, processedTotal) {
     ];
     if (batchStats.photoErrors) parts.push(`ошибок фото ${batchStats.photoErrors}`);
     const dates = batchStats.firstDate ? `, даты ${batchStats.firstDate} → ${batchStats.lastDate}` : '';
-    console.log(
+    return (
         `Батч offset=${batchStats.offset}, получено ${batchStats.received}${dates}; ` +
-        `${parts.join(', ')}; обработано за сессию ${processedTotal} из ${totalCount}`,
+        `${parts.join(', ')}; обработано за сессию ${processedTotal} из ${totalCount}`
     );
+}
+
+// Печатает статистику полностью завершённого батча и сохраняет строку в журнал сессии.
+// Используется основным циклом после formatBatchSummary.
+function logBatchSummary(batchStats, totalCount, processedTotal, sessionLogLines) {
+    const line = formatBatchSummary(batchStats, totalCount, processedTotal);
+    console.log(line);
+    sessionLogLines.push(line);
 }
 
 // Открывает Session-папку системным файловым менеджером без блокировки Node-процесса.
@@ -310,10 +319,9 @@ async function openSaveFolder(folderPath) {
     child.unref();
 }
 
-// Сохраняет точный checkpoint, печатает итог и открывает папку только после завершения I/O.
-// Используется main() для всех штатных причин остановки.
-async function finishSession(context, stopReason, resumeOffset, reachedEnd) {
-    await flushLinkFiles(context);
+// Формирует текст отчёта о сборе — те же сведения, что в финальном логе сессии.
+// Используется finishSession перед записью файла в Session-папку.
+function buildCollectionReport(context, stopReason, checkpoint) {
     const summary = [
         `постов ${context.stats.posts}`,
         `фото ${context.stats.photos}`,
@@ -322,13 +330,40 @@ async function finishSession(context, stopReason, resumeOffset, reachedEnd) {
         `gif ${context.stats.gifs}`,
         `ошибок фото ${context.stats.photoErrors}`,
     ].join(' | ');
+    const lines = [
+        'Информация о сборе контента ВКонтакте',
+        '',
+        ...context.sessionLogLines,
+        '',
+        'Программа успешно завершилась',
+        `Сводка: ${summary}`,
+        `Причина остановки: ${stopReason}`,
+        `Папка сессии: ${context.sessionPath}`,
+        checkpoint,
+    ];
+    return { summary, text: `${lines.join('\n')}\n` };
+}
+
+// Сохраняет точный checkpoint, отчёт о сборе, печатает итог и открывает папку после I/O.
+// Используется main() для всех штатных причин остановки.
+async function finishSession(context, stopReason, resumeOffset, reachedEnd) {
+    await flushLinkFiles(context);
     const checkpoint = reachedEnd
         ? `Стена сообщества полностью обработана. Следующий offset: ${resumeOffset}.`
         : `Следующий offset для продолжения: ${resumeOffset}. Причина остановки: ${stopReason}.`;
     const checkpointName = reachedEnd
         ? `Стена группы ${context.groupName} обработана полностью.txt`
         : `Точка продолжения группы ${context.groupName}.txt`;
-    await writeFileAtomic(path.join(context.sessionPath, sanitizePathSegment(checkpointName, 120, 'Точка продолжения.txt')), checkpoint);
+    const { summary, text: reportText } = buildCollectionReport(context, stopReason, checkpoint);
+    const reportName = sanitizePathSegment(
+        `Информация о сборе группы ${context.groupName}.txt`,
+        120,
+        'Информация о сборе.txt',
+    );
+    await Promise.all([
+        writeFileAtomic(path.join(context.sessionPath, sanitizePathSegment(checkpointName, 120, 'Точка продолжения.txt')), checkpoint),
+        writeFileAtomic(path.join(context.sessionPath, reportName), reportText),
+    ]);
 
     console.log('');
     console.log('Программа успешно завершилась');
@@ -385,6 +420,7 @@ async function main() {
         verbose: config.verbose,
         stats: { posts: 0, photos: 0, texts: 0, videos: 0, gifs: 0, photoErrors: 0 },
         batchStats: null,
+        sessionLogLines: [],
         videoSections: [],
         gifSections: [],
         videoLinksPath: path.join(sessionPath, `Ссылки на видео из группы ${groupName}.txt`),
@@ -392,10 +428,18 @@ async function main() {
     };
     await flushLinkFiles(context);
 
-    console.log(`Группа: ${groupName} (${group.id})`);
-    console.log(`Начальный offset: ${config.startOffset}; размер батча: ${config.startCount}`);
+    const startupLines = [
+        `Группа: ${groupName} (${group.id})`,
+        `Начальный offset: ${config.startOffset}; размер батча: ${config.startCount}`,
+    ];
     if (collectionCutoffUnix != null) {
-        console.log(`Нижняя граница: ${moment.unix(collectionCutoffUnix).format('YYYY.MM.DD HH⁚mm⁚ss')} включительно`);
+        startupLines.push(
+            `Нижняя граница: ${moment.unix(collectionCutoffUnix).format('YYYY.MM.DD HH⁚mm⁚ss')} включительно`,
+        );
+    }
+    for (const line of startupLines) {
+        console.log(line);
+        context.sessionLogLines.push(line);
     }
 
     let offset = config.startOffset;
@@ -475,7 +519,7 @@ async function main() {
         );
         mergeBatchResults(batchResults, context);
         await flushLinkFiles(context);
-        logBatchSummary(context.batchStats, totalCount, context.stats.posts);
+        logBatchSummary(context.batchStats, totalCount, context.stats.posts, context.sessionLogLines);
         if (shouldStop) break;
 
         // Сдвигаем на запрошенный count, а не на items.length: VK иногда отдаёт
