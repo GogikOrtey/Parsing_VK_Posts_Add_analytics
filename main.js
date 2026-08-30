@@ -1039,8 +1039,11 @@ async function openSaveFolder(folderPath) {
 }
 
 async function EndOfProgramm() {
+    // Финальные сообщения и маркер для агента/обвязки: ждать нужно exit процесса (или PARSER_EXIT), не русские фразы в логе.
+    // Вызывается перед process.exit() при достижении даты, allCount, конца стены и т.п.
     console.log(``)
     console.log(`🟢🟢🟢 Программа успешно завершилась`)
+    console.log(`PARSER_EXIT ok`)
 
     let dOut2;
 

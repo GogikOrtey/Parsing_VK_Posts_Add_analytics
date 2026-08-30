@@ -59,6 +59,17 @@ node analityc.js --groupId=creativityal --isAnalitycs=true
 ## Важные особенности / баги
 - В `main.js` общее число постов на стене берётся из `wall.get` → `response.count`. Раньше ошибочно писали `item.id` (ID первого поста) в лог и в `allCountPostOfThisGroup` — это не количество постов.
 - Точка входа парсера в репозитории: `run_main.js` (в старых заметках может фигурировать как `run.js`).
+- По завершении `main.js` открывает папку Session (`openSaveFolder`), пишет `PARSER_EXIT ok` и делает `process.exit()`. Открытие проводника — detached, на exit не влияет.
+
+## Ожидание завершения парсера (для агента)
+**Не ждать по русским фразам** в логе («до указанной даты», «успешно завершилась» и т.п.) — ложные срабатывания и срывы при сообщении пользователя в чат.
+
+Надёжные способы (по приоритету):
+1. **Foreground:** `Shell` → `node run_main.js` с `block_until_ms` ≥ ожидаемого времени (напр. `600000`). Инструмент сам ждёт **exit** процесса; после возврата — CursorNotify.
+2. **Background + статус:** `block_until_ms: 0`, затем опрос `AwaitShell` с `block_until_ms: 0` (без pattern) и чтение шапки терминала (`status` / `exit_code`), либо конец хода и системный notification о завершении shell.
+3. **Pattern только запасной:** единственный надёжный маркер в stdout — ASCII-строка `PARSER_EXIT` (не `exit_code` в footer — он pattern’ом не матчится).
+
+После успеха слать CursorNotify.
 
 ## Стек
 Node.js (ES modules), `node-fetch`, `moment`, `sharp`, `axios`, `dotenv`, Puppeteer (для видео-даунлоадера).

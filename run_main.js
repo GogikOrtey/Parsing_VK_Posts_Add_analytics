@@ -35,11 +35,11 @@ import { fileURLToPath } from 'url';
 // let groupId = 'iichan228';
 // let groupId = 'snowarts';
 // let groupId = 'https://vk.ru/snowarts';
-// let groupId = 'https://vk.ru/club238701965';
+let groupId = 'https://vk.ru/club238701965';
 // let groupId = 'https://vk.ru/club237133417';
 // let groupId = 'https://vk.ru/nekomi_waifu';
 // let groupId = 'https://vk.ru/kipfena24296416';
-let groupId = 'https://vk.ru/podvalhyundai';
+// let groupId = 'https://vk.ru/podvalhyundai';
 
 
 
@@ -61,10 +61,10 @@ let allCount = -1      // Ограничитель, сколько мы обра
 
 // // Нижняя граница по дате/времени публикации: сохраняем посты от верха стены вниз до этой точки (включительно)
 // // Время (необязательно): "02:43:50" | "02⁚43⁚50" | "02:43" | "2h 43m". // Если время не указано — считаем 00:00:00 указанной даты.
-let collection_time_before_date = ""
-let collection_time_before_time = ""
-// let collection_time_before_date = "2026.07.25"   // например "2026.07.02" // Пустая дата = без ограничения по дате
-// let collection_time_before_time = "02⁚43⁚50"   // например "02:43:50" или "2h 43m"
+// let collection_time_before_date = ""
+// let collection_time_before_time = ""
+let collection_time_before_date = "2026.08.15"   // например "2026.07.02" // Пустая дата = без ограничения по дате
+let collection_time_before_time = ""   // например "02:43:50" или "2h 43m"
 
 // // count - это количество постов, которые вернёт нам сервер max=100
 // // offset - это сдвиг, относительно которого нам сервер отправит посты
