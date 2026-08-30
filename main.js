@@ -2,8 +2,8 @@
 // Назначение: основная программа выгрузки постов ВКонтакте. Получает стену пакетами через
 // wall.get, ограниченно-параллельно сохраняет посты каждого батча, полностью ожидает запись
 // текста/фото/опросов и сохраняет ссылки на GIF/video в порядке стены. В Session также пишет
-// текстовый отчёт о сборе (параметры старта, итоги батчей, финальная сводка). Настройки
-// приходят из CLI (обычно от run_main.js), ACCESS_TOKEN — из .env.
+// текстовый отчёт о сборе (параметры старта и финальная сводка сверху, итоги батчей — в конце).
+// Настройки приходят из CLI (обычно от run_main.js), ACCESS_TOKEN — из .env.
 
 import 'dotenv/config';
 import fs from 'fs/promises';
@@ -295,31 +295,61 @@ function formatBatchSummary(batchStats, totalCount, processedTotal) {
     );
 }
 
-// Печатает статистику полностью завершённого батча и сохраняет строку в журнал сессии.
+// Печатает статистику полностью завершённого батча и сохраняет строку для хвоста отчёта.
 // Используется основным циклом после formatBatchSummary.
-function logBatchSummary(batchStats, totalCount, processedTotal, sessionLogLines) {
+function logBatchSummary(batchStats, totalCount, processedTotal, sessionBatchLines) {
     const line = formatBatchSummary(batchStats, totalCount, processedTotal);
     console.log(line);
-    sessionLogLines.push(line);
+    sessionBatchLines.push(line);
 }
 
-// Открывает Session-папку системным файловым менеджером без блокировки Node-процесса.
+// Открывает Session-папку в проводнике/файловом менеджере и коротко ждёт отцепления процесса.
+// На Windows использует Invoke-Item -LiteralPath (скобки и Unicode в имени Session),
+// иначе explorer часто молча падает, а мгновенный exit родителя убивает окно.
 // Используется finishSession после завершения всех записей.
 async function openSaveFolder(folderPath) {
     const absolutePath = path.resolve(folderPath);
-    let child;
-    if (process.platform === 'win32') {
-        child = spawn('explorer.exe', [absolutePath], { detached: true, stdio: 'ignore', windowsHide: true });
-    } else if (process.platform === 'darwin') {
-        child = spawn('open', [absolutePath], { detached: true, stdio: 'ignore' });
-    } else {
-        child = spawn('xdg-open', [absolutePath], { detached: true, stdio: 'ignore' });
+    try {
+        await fs.access(absolutePath);
+    } catch {
+        console.log(`Предупреждение: папка не открыта — путь не существует: ${absolutePath}`);
+        return;
     }
-    child.on('error', (error) => console.log(`Предупреждение: папка не открыта: ${error.message}`));
-    child.unref();
+
+    await new Promise((resolve) => {
+        let child;
+        if (process.platform === 'win32') {
+            const literalPath = absolutePath.replace(/'/g, "''");
+            child = spawn(
+                'powershell.exe',
+                ['-NoProfile', '-WindowStyle', 'Hidden', '-Command', `Invoke-Item -LiteralPath '${literalPath}'`],
+                { detached: true, stdio: 'ignore', windowsHide: true },
+            );
+        } else if (process.platform === 'darwin') {
+            child = spawn('open', [absolutePath], { detached: true, stdio: 'ignore' });
+        } else {
+            child = spawn('xdg-open', [absolutePath], { detached: true, stdio: 'ignore' });
+        }
+
+        const finish = (warning) => {
+            if (warning) console.log(warning);
+            try {
+                child.unref();
+            } catch {
+                // процесс уже завершился
+            }
+            resolve();
+        };
+
+        child.on('error', (error) => finish(`Предупреждение: папка не открыта: ${error.message}`));
+        child.on('spawn', () => {
+            // Пауза, чтобы start/Invoke-Item успел отцепиться до process.exit в run_main.js
+            setTimeout(() => finish(), 500);
+        });
+    });
 }
 
-// Формирует текст отчёта о сборе — те же сведения, что в финальном логе сессии.
+// Формирует текст отчёта о сборе: параметры и итог сверху, все строки батчей — в конце через 5 пустых строк.
 // Используется finishSession перед записью файла в Session-папку.
 function buildCollectionReport(context, stopReason, checkpoint) {
     const summary = [
@@ -333,7 +363,7 @@ function buildCollectionReport(context, stopReason, checkpoint) {
     const lines = [
         'Информация о сборе контента ВКонтакте',
         '',
-        ...context.sessionLogLines,
+        ...context.sessionStartupLines,
         '',
         'Программа успешно завершилась',
         `Сводка: ${summary}`,
@@ -341,6 +371,9 @@ function buildCollectionReport(context, stopReason, checkpoint) {
         `Папка сессии: ${context.sessionPath}`,
         checkpoint,
     ];
+    if (context.sessionBatchLines.length > 0) {
+        lines.push('', '', '', '', '', ...context.sessionBatchLines);
+    }
     return { summary, text: `${lines.join('\n')}\n` };
 }
 
@@ -420,7 +453,8 @@ async function main() {
         verbose: config.verbose,
         stats: { posts: 0, photos: 0, texts: 0, videos: 0, gifs: 0, photoErrors: 0 },
         batchStats: null,
-        sessionLogLines: [],
+        sessionStartupLines: [],
+        sessionBatchLines: [],
         videoSections: [],
         gifSections: [],
         videoLinksPath: path.join(sessionPath, `Ссылки на видео из группы ${groupName}.txt`),
@@ -439,7 +473,7 @@ async function main() {
     }
     for (const line of startupLines) {
         console.log(line);
-        context.sessionLogLines.push(line);
+        context.sessionStartupLines.push(line);
     }
 
     let offset = config.startOffset;
@@ -519,7 +553,7 @@ async function main() {
         );
         mergeBatchResults(batchResults, context);
         await flushLinkFiles(context);
-        logBatchSummary(context.batchStats, totalCount, context.stats.posts, context.sessionLogLines);
+        logBatchSummary(context.batchStats, totalCount, context.stats.posts, context.sessionBatchLines);
         if (shouldStop) break;
 
         // Сдвигаем на запрошенный count, а не на items.length: VK иногда отдаёт
