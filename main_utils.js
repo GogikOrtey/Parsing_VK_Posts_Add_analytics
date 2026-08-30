@@ -227,12 +227,14 @@ export function formatPollText(poll) {
     return lines.join('\n');
 }
 
-// Возвращает true, когда ответ точно завершает стену по длине батча или response.count.
+// Возвращает true, когда стена закончена: пустой батч или nextOffset дошёл до response.count.
+// Короткий батч (items < count) сам по себе не конец: VK иногда отдаёт меньше постов
+// из‑за скрытых/удалённых, при этом response.count ещё далеко впереди.
 // Используется основным циклом main.js вместо эвристики по скорости ответа.
 export function isEndOfWall({ itemsLength, requestedCount, nextOffset, totalCount }) {
     if (itemsLength === 0) return true;
     if (Number.isFinite(totalCount) && nextOffset >= totalCount) return true;
-    return itemsLength < requestedCount;
+    return false;
 }
 
 // Рассчитывает размер следующего wall.get с учётом общего лимита текущей сессии.

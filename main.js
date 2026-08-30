@@ -456,7 +456,9 @@ async function main() {
         logBatchSummary(context.batchStats, totalCount, context.stats.posts);
         if (shouldStop) break;
 
-        offset = batchOffset + response.items.length;
+        // Сдвигаем на запрошенный count, а не на items.length: VK иногда отдаёт
+        // меньше постов (дыры/скрытые), и сдвиг по длине батча приводит к дублям.
+        offset = batchOffset + requestedCount;
         if (isEndOfWall({
             itemsLength: response.items.length,
             requestedCount,

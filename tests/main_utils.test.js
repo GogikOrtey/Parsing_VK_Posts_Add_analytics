@@ -85,9 +85,11 @@ test('выбирается самое большое валидное фото',
     assert.equal(selectLargestPhoto({ sizes: [] }), null);
 });
 
-test('конец стены определяется содержимым ответа, а не скоростью', () => {
+test('конец стены определяется пустым батчем или nextOffset >= count', () => {
     assert.equal(isEndOfWall({ itemsLength: 0, requestedCount: 20, nextOffset: 20, totalCount: 100 }), true);
-    assert.equal(isEndOfWall({ itemsLength: 10, requestedCount: 20, nextOffset: 90, totalCount: 100 }), true);
+    assert.equal(isEndOfWall({ itemsLength: 10, requestedCount: 20, nextOffset: 90, totalCount: 100 }), false);
+    assert.equal(isEndOfWall({ itemsLength: 10, requestedCount: 20, nextOffset: 100, totalCount: 100 }), true);
+    assert.equal(isEndOfWall({ itemsLength: 19, requestedCount: 20, nextOffset: 39, totalCount: 1721 }), false);
     assert.equal(isEndOfWall({ itemsLength: 20, requestedCount: 20, nextOffset: 40, totalCount: 100 }), false);
     assert.equal(isEndOfWall({ itemsLength: 20, requestedCount: 20, nextOffset: 100, totalCount: 100 }), true);
 });
